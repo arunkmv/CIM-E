@@ -367,11 +367,11 @@ def _check_prev_results(cfg: dict, result_path: str,
 
 def _load_xbar_simulator_lib(c: dict, n_sim_threads: int):
     # Execute dlopen to make symbols visible for the compiled executable
-    files = glob.glob(os.path.join(ACS_LIB_PATH, 'acs_int.cpython*'))
+    files = glob.glob(os.path.join(ACS_LIB_PATH, 'acs_py.cpython*'))
     assert len(files) == 1
     acs_lib = ctypes.CDLL(f"{files[0]}", mode=ctypes.RTLD_GLOBAL)
 
-    import acs_int
+    import acs_py
 
     # Create config file for simulator
     if not os.path.exists(ACS_CFG_DIR):
@@ -381,10 +381,10 @@ def _load_xbar_simulator_lib(c: dict, n_sim_threads: int):
     # Set acs config
     fd, tmp_name = tempfile.mkstemp(dir=ACS_CFG_DIR, suffix=".json")
     _ = _gen_acs_cfg_data(c, tmp_name)
-    acs_int.set_config(os.path.abspath(tmp_name), n_sim_threads)
+    acs_py.set_config(os.path.abspath(tmp_name), n_sim_threads)
     os.close(fd)
 
-    return acs_int, acs_lib
+    return acs_py, acs_lib
 
 
 def _load_emulator_lib():

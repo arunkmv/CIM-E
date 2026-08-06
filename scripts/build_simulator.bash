@@ -32,7 +32,7 @@ cmake \
     -DCMAKE_PREFIX_PATH=${LIB_INSTALL_PATH} \
     -DCMAKE_INSTALL_PREFIX=../ \
     -DLIB_TESTS=ON \
-    -DBUILD_LIB_ACS_INT=ON \
+    -DBUILD_LIB_ACS_PY=ON \
     -DBUILD_LIB_CB_EMU=ON \
     ${PROJ_DIR}/analog-cim-sim/cpp
 
