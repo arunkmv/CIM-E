@@ -200,6 +200,7 @@ def _check_prev_results(cfg: dict, result_path: str,
         # Convert list strings to lists
         for k, v in cfg[0].items():
             if type(v) == list:
+                df_to_check[k] = df_to_check[k].astype(object)
                 df_to_check.loc[:, k] = df_to_check[k].apply(
                     lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
 
