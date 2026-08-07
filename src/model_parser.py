@@ -67,7 +67,8 @@ def create_experiment(cfg: dict) -> ExpConfig:
         read_disturb_update_tolerance=cfg.get('read_disturb_update_tolerance'),
         parasitics=cfg.get('parasitics'),
         w_res=cfg.get('w_res'),
-        c2c_var=cfg.get('c2c_var'))
+        c2c_var=cfg.get('c2c_var'),
+        mvm_profile=cfg.get('mvm_profile'))
 
     for key in cfg.keys():
         if not hasattr(exp, key):

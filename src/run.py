@@ -6,7 +6,6 @@
 # found in the root directory of this source tree.                           #
 ##############################################################################
 from tvm.contrib import graph_executor
-from itertools import product
 from typing import Tuple
 from typing import List
 import tensorflow as tf
@@ -17,7 +16,6 @@ import tempfile
 import ctypes
 import pickle
 import time
-import json
 import glob
 import sys
 import tvm
@@ -55,64 +53,6 @@ def _check_pathes(acs_lib_path: str, emu_lib_path: str,
             os.remove(file)
         except Exception as e:
             print(f"Error deleting file {file}: {e}")
-
-
-def iterate_experiments(exp: ExpConfig):
-    cfg = []
-    static_fields = {
-        key: value
-        for key, value in {
-            'nn_data_set': exp.nn_data_set,
-            'nn_data': exp.nn_data,
-            'batch': exp.batch,
-            'num_runs': exp.num_runs,
-            'digital_only': exp.digital_only,
-            'adc_type': exp.adc_type,
-            'adc_profile': exp.adc_profile,
-            'adc_calib_dict': exp.adc_calib_dict,
-            'verbose': exp.verbose,
-            'read_disturb': exp.read_disturb,
-            'read_disturb_mitigation_strategy':
-            exp.read_disturb_mitigation_strategy,
-            'parasitics': exp.parasitics,
-            'c2c_var': exp.c2c_var
-        }.items() if value is not None
-    }
-    iterable_fields = {
-        key: value
-        for key, value in {
-            'nn_name': exp.nn_names,
-            'xbar_size': exp.xbar_size,
-            'hrs_lrs': exp.hrs_lrs,
-            'gmin_gmax': exp.gmin_gmax,
-            'resolution': exp.resolution,
-            'adc_calib_mode': exp.adc_calib_mode,
-            'm_mode': exp.m_mode,
-            'hrs_noise': exp.hrs_noise,
-            'lrs_noise': exp.lrs_noise,
-            'V_read': exp.V_read,
-            't_read': exp.t_read,
-            'read_disturb_update_freq': exp.read_disturb_update_freq,
-            'read_disturb_mitigation_fp': exp.read_disturb_mitigation_fp,
-            'read_disturb_update_tolerance': exp.read_disturb_update_tolerance,
-            'w_res': exp.w_res
-        }.items() if value is not None
-    }
-    iterable_fields = {k: v for k, v in iterable_fields.items() if v != None}
-    for combination in product(*iterable_fields.values()):
-        config_entry = {**static_fields}
-        for key, value in zip(iterable_fields.keys(), combination):
-            config_entry[key] = value
-        nn_idx = [
-            idx for idx, i in enumerate(exp.nn_names)
-            if i == config_entry['nn_name']
-        ][0]
-        config_entry['ifm'] = exp.ifm[nn_idx]
-        cfg.append(config_entry)
-
-    if len(cfg) == 0:
-        raise Exception("Could not load config.")
-    return cfg
 
 
 def _get_all_datasets(
@@ -226,93 +166,6 @@ def _get_dataset(
                                                        test_labels)
 
 
-def _gen_acs_cfg_data(cfg: dict, tmp_name: str) -> dict:
-    if cfg['adc_type'] == "INF_ADC":
-        adc_type = "INF_ADC"
-    else:
-        if cfg['m_mode'] in [
-                'BNN_I', 'BNN_II', 'BNN_VI', 'TNN_I', 'TNN_II', 'TNN_III'
-        ]:
-            adc_type = "SYM_RANGE_ADC"
-        elif cfg['m_mode'] in [
-                'BNN_III', 'BNN_IV', 'BNN_V', 'TNN_IV', 'TNN_V'
-        ]:
-            adc_type = "POS_RANGE_ONLY_ADC"
-        else:
-            raise ValueError("m_mode not supported")
-
-    # Required parameters (not optional)
-    acs_data = {
-        "M":
-        cfg['xbar_size'][0],
-        "N":
-        cfg['xbar_size'][1],
-        "digital_only":
-        cfg['digital_only'],
-        "HRS":
-        cfg['hrs_lrs'][0] if 'hrs_lrs' in cfg.keys() else cfg['gmin_gmax'][0] *
-        abs(cfg['V_read']),
-        "LRS":
-        cfg['hrs_lrs'][1] if 'hrs_lrs' in cfg.keys() else cfg['gmin_gmax'][1] *
-        abs(cfg['V_read']),
-        "adc_type":
-        adc_type,
-        "m_mode":
-        cfg['m_mode'],
-        "HRS_NOISE":
-        cfg['hrs_noise'],
-        "LRS_NOISE":
-        cfg['lrs_noise'],
-        "verbose":
-        cfg['verbose']
-    }
-
-    # Optional parameters
-    if cfg.get('resolution') is not None:
-        acs_data["resolution"] = cfg['resolution']
-    if cfg.get('adc_profile') is not None:
-        acs_data["adc_profile"] = cfg['adc_profile'] > 0
-        if cfg['adc_profile'] > 0:
-            acs_data["adc_profile_bin_size"] = cfg['adc_profile']
-    if cfg.get('adc_calib_mode') is not None:
-        acs_data["adc_calib_mode"] = cfg['adc_calib_mode']
-    if cfg.get('adc_calib_dict') is not None:
-        acs_data["adc_calib_dict"] = cfg['adc_calib_dict'][cfg['nn_name']][str(
-            cfg['xbar_size'])][cfg['m_mode']]
-    if cfg.get('read_disturb') is not None:
-        acs_data["read_disturb"] = cfg['read_disturb']
-    if cfg.get('V_read') is not None:
-        acs_data["V_read"] = cfg['V_read']
-    if cfg.get('t_read') is not None:
-        acs_data["t_read"] = cfg['t_read']
-    if cfg.get('read_disturb_update_freq') is not None:
-        acs_data["read_disturb_update_freq"] = cfg['read_disturb_update_freq']
-    if cfg.get('read_disturb_mitigation_strategy') is not None:
-        acs_data["read_disturb_mitigation_strategy"] = cfg[
-            'read_disturb_mitigation_strategy']
-    if cfg.get('read_disturb_mitigation_fp') is not None:
-        acs_data["read_disturb_mitigation_fp"] = cfg[
-            'read_disturb_mitigation_fp']
-    if cfg.get('read_disturb_update_tolerance') is not None:
-        acs_data["read_disturb_update_tolerance"] = cfg[
-            'read_disturb_update_tolerance']
-    if cfg.get('parasitics') is not None:
-        acs_data["parasitics"] = cfg['parasitics']
-    if cfg.get('w_res') is not None:
-        acs_data["w_res"] = cfg['w_res']
-    if cfg.get('c2c_var') is not None:
-        acs_data["c2c_var"] = cfg['c2c_var']
-
-    if cfg['m_mode'] in ['TNN_IV', 'TNN_V']:
-        acs_data["SPLIT"] = [1, 1]
-        acs_data["W_BIT"] = 2
-
-    with open(f"{tmp_name}", "w") as f:
-        json.dump(acs_data, f, indent=4)
-
-    return acs_data
-
-
 def _check_prev_results(cfg: dict, result_path: str,
                         exp_name: str) -> Tuple[dict, pd.DataFrame, int]:
     """Excludes experiments that have already been carried out.
@@ -380,7 +233,7 @@ def _load_xbar_simulator_lib(c: dict, n_sim_threads: int):
 
     # Set acs config
     fd, tmp_name = tempfile.mkstemp(dir=ACS_CFG_DIR, suffix=".json")
-    _ = _gen_acs_cfg_data(c, tmp_name)
+    _ = ExpConfig.dump_acs_config(c, tmp_name)
     acs_py.set_config(os.path.abspath(tmp_name), n_sim_threads)
     os.close(fd)
 
@@ -526,9 +379,13 @@ def _run_single_experiment(
                                     refresh_ops=None,
                                     refresh_cell_ops=None)
 
+        # Dump profiling data
         if c.get("adc_profile"):
             adc_profile_filename = f"{result_path}/adc_prof_{stats.config_idx}.json"
             acs_int.dump_adc_profile(adc_profile_filename)
+        if c.get("mvm_profile"):
+            mvm_profile_filename = f"{result_path}/mvm_prof_{stats.config_idx}.json"
+            acs_int.dump_mvm_profile(mvm_profile_filename)
 
         del acs_int
         del acs_lib
@@ -646,7 +503,7 @@ def run_experiments(exp: ExpConfig,
                     emu_lib_path: str = None,
                     acs_cfg_dir: str = None) -> None:
     _check_pathes(acs_lib_path, emu_lib_path, acs_cfg_dir)
-    cfgs = iterate_experiments(exp)
+    cfgs = exp.iterate_sweep()
 
     result_path = f"{repo_path}/results/{exp_name}"
     cfgs, df, c_idx_offset = _check_prev_results(cfgs, result_path, exp_name)

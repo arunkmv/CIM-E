@@ -8,6 +8,8 @@
 from typing import List, Tuple, Optional, Union, get_type_hints, Dict
 from dataclasses import dataclass
 import numpy as np
+from itertools import product
+import json
 
 
 @dataclass
@@ -41,8 +43,9 @@ class ExpConfig:
     parasitics: Optional[bool] = None
     w_res: Optional[List[float]] = None
     c2c_var: Optional[bool] = None
+    mvm_profile: Optional[int] = None
 
-    def __check_paramters(self):
+    def _check_paramters(self):
         if self.nn_data_set not in ["cifar10", "cifar100", "mnist"]:
             raise ValueError("nn_data_set not supported.")
         for ifm_shape in self.ifm:
@@ -176,7 +179,159 @@ class ExpConfig:
                 raise ValueError(
                     f"Argument '{field_name}' is missing in ExpConfig. Please provide all required arguments."
                 )
-        self.__check_paramters()
+        self._check_paramters()
+
+    def iterate_sweep(self) -> dict:
+        """Generate all possible sweep configurations."""
+        cfg = []
+        static_fields = {
+            key: value
+            for key, value in {
+                'nn_data_set': self.nn_data_set,
+                'nn_data': self.nn_data,
+                'batch': self.batch,
+                'num_runs': self.num_runs,
+                'digital_only': self.digital_only,
+                'adc_type': self.adc_type,
+                'adc_profile': self.adc_profile,
+                'adc_calib_dict': self.adc_calib_dict,
+                'verbose': self.verbose,
+                'mvm_profile': self.mvm_profile,
+                'read_disturb': self.read_disturb,
+                'read_disturb_mitigation_strategy':
+                    self.read_disturb_mitigation_strategy,
+                    'parasitics': self.parasitics,
+                    'c2c_var': self.c2c_var,
+            }.items() if value is not None
+        }
+        iterable_fields = {
+            key: value
+            for key, value in {
+                'nn_name': self.nn_names,
+                'xbar_size': self.xbar_size,
+                'hrs_lrs': self.hrs_lrs,
+                'gmin_gmax': self.gmin_gmax,
+                'resolution': self.resolution,
+                'adc_calib_mode': self.adc_calib_mode,
+                'm_mode': self.m_mode,
+                'hrs_noise': self.hrs_noise,
+                'lrs_noise': self.lrs_noise,
+                'V_read': self.V_read,
+                't_read': self.t_read,
+                'read_disturb_update_freq': self.read_disturb_update_freq,
+                'read_disturb_mitigation_fp': self.read_disturb_mitigation_fp,
+                'read_disturb_update_tolerance': self.read_disturb_update_tolerance,
+                'w_res': self.w_res
+            }.items() if value is not None
+        }
+        iterable_fields = {k: v for k,
+                           v in iterable_fields.items() if v != None}
+        for combination in product(*iterable_fields.values()):
+            config_entry = {**static_fields}
+            for key, value in zip(iterable_fields.keys(), combination):
+                config_entry[key] = value
+                nn_idx = [
+                    idx for idx, i in enumerate(self.nn_names)
+                    if i == config_entry['nn_name']
+                ][0]
+                config_entry['ifm'] = self.ifm[nn_idx]
+                cfg.append(config_entry)
+
+        if len(cfg) == 0:
+            raise Exception("Could not iterate experiment sweep!")
+        return cfg
+
+    @staticmethod
+    def dump_acs_config(cfg: dict, file_name: str) -> dict:
+        """Dump a single ACS JSON configuration file"""
+        if cfg['adc_type'] == "INF_ADC":
+            adc_type = "INF_ADC"
+        else:
+            if cfg['m_mode'] in [
+                    'BNN_I', 'BNN_II', 'BNN_VI', 'TNN_I', 'TNN_II', 'TNN_III'
+            ]:
+                adc_type = "SYM_RANGE_ADC"
+            elif cfg['m_mode'] in [
+                    'BNN_III', 'BNN_IV', 'BNN_V', 'TNN_IV', 'TNN_V'
+            ]:
+                adc_type = "POS_RANGE_ONLY_ADC"
+            else:
+                raise ValueError("m_mode not supported")
+
+        # Required parameters (not optional)
+        acs_data = {
+            "M":
+            cfg['xbar_size'][0],
+            "N":
+            cfg['xbar_size'][1],
+            "digital_only":
+            cfg['digital_only'],
+            "HRS":
+            cfg['hrs_lrs'][0] if 'hrs_lrs' in cfg.keys() else cfg['gmin_gmax'][0] *
+            abs(cfg['V_read']),
+            "LRS":
+            cfg['hrs_lrs'][1] if 'hrs_lrs' in cfg.keys() else cfg['gmin_gmax'][1] *
+            abs(cfg['V_read']),
+            "adc_type":
+            adc_type,
+            "m_mode":
+            cfg['m_mode'],
+            "HRS_NOISE":
+            cfg['hrs_noise'],
+            "LRS_NOISE":
+            cfg['lrs_noise'],
+            "verbose":
+            cfg['verbose']
+        }
+
+        # Optional parameters
+        if cfg.get('resolution') is not None:
+            acs_data["resolution"] = cfg['resolution']
+        if cfg.get('adc_profile') is not None:
+            acs_data["adc_profile"] = cfg['adc_profile'] > 0
+            if acs_data['adc_profile']:
+                acs_data["adc_profile_bin_size"] = cfg['adc_profile']
+        if cfg.get('adc_calib_mode') is not None:
+            acs_data["adc_calib_mode"] = cfg['adc_calib_mode']
+        if cfg.get('adc_calib_dict') is not None:
+            acs_data["adc_calib_dict"] = cfg['adc_calib_dict'][cfg['nn_name']][str(
+                cfg['xbar_size'])][cfg['m_mode']]
+        if cfg.get('read_disturb') is not None:
+            acs_data["read_disturb"] = cfg['read_disturb']
+        if cfg.get('V_read') is not None:
+            acs_data["V_read"] = cfg['V_read']
+        if cfg.get('t_read') is not None:
+            acs_data["t_read"] = cfg['t_read']
+        if cfg.get('read_disturb_update_freq') is not None:
+            acs_data["read_disturb_update_freq"] = cfg['read_disturb_update_freq']
+        if cfg.get('read_disturb_mitigation_strategy') is not None:
+            acs_data["read_disturb_mitigation_strategy"] = cfg[
+                'read_disturb_mitigation_strategy']
+        if cfg.get('read_disturb_mitigation_fp') is not None:
+            acs_data["read_disturb_mitigation_fp"] = cfg[
+                'read_disturb_mitigation_fp']
+        if cfg.get('read_disturb_update_tolerance') is not None:
+            acs_data["read_disturb_update_tolerance"] = cfg[
+                'read_disturb_update_tolerance']
+        if cfg.get('parasitics') is not None:
+            acs_data["parasitics"] = cfg['parasitics']
+        if cfg.get('w_res') is not None:
+            acs_data["w_res"] = cfg['w_res']
+        if cfg.get('c2c_var') is not None:
+            acs_data["c2c_var"] = cfg['c2c_var']
+        if cfg.get('mvm_profile') is not None:
+            acs_data["mvm_profile"] = cfg['mvm_profile'] > 0
+            if acs_data['mvm_profile']:
+                acs_data["mvm_profile_bin_size"] = cfg['mvm_profile']
+
+        if cfg['m_mode'] in ['TNN_IV', 'TNN_V']:
+            acs_data["SPLIT"] = [1, 1]
+            acs_data["W_BIT"] = 2
+
+        with open(f"{file_name}", "w") as f:
+            json.dump(acs_data, f, indent=4)
+
+        return acs_data
 
 
 @dataclass
