@@ -198,10 +198,9 @@ class ExpConfig:
                 'verbose': self.verbose,
                 'mvm_profile': self.mvm_profile,
                 'read_disturb': self.read_disturb,
-                'read_disturb_mitigation_strategy':
-                    self.read_disturb_mitigation_strategy,
-                    'parasitics': self.parasitics,
-                    'c2c_var': self.c2c_var,
+                'read_disturb_mitigation_strategy': self.read_disturb_mitigation_strategy,
+                'parasitics': self.parasitics,
+                'c2c_var': self.c2c_var,
             }.items() if value is not None
         }
         iterable_fields = {
@@ -235,7 +234,7 @@ class ExpConfig:
                     if i == config_entry['nn_name']
                 ][0]
                 config_entry['ifm'] = self.ifm[nn_idx]
-                cfg.append(config_entry)
+            cfg.append(config_entry)
 
         if len(cfg) == 0:
             raise Exception("Could not iterate experiment sweep!")
