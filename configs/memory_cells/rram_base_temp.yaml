@@ -1,0 +1,22 @@
+-MemCellType: RRAM
+-DeviceRoadmap -1LP 1HP 2LSTP: 2
+-CellArea (F^2): 16
+-CellAspectRatio: 1
+-CellReadLeakEnergyMultiplier: 1
+-CellWriteEnergyMultiplier: 1
+-CellCapacitanceMultiplier: 0.3
+-CellCapacitanceAdjust (F): 0.0
+-AccessCMOSWidth (F): 4
+-ReadMode: voltage
+-SRAMCellNMOSWidth (F): 2
+-SRAMCellPMOSWidth (F): 2
+-MinSenseVoltage (mV): 20
+-ResistanceOn (ohm): 49999.99999999999
+-ResistanceOff (ohm): 399999.99999999994
+-SetVoltage (V): 2
+-SetPulse (ns): 40
+-ReadVoltage (V): 1
+-ReadPulse (ns): 10.0
+-AccessType: CMOS
+-AccessTransistorResistance (ohm): 1000
+-AccessVoltage (V): 0.1
