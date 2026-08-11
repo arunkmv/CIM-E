@@ -284,8 +284,8 @@ def run_single_energy_estimation(mvm_profile: dict,
     bt_mac_scales = {
         'BNN_I': 0.5,
         'BNN_II': 0.5,
-        'BNN_III': 1,
-        'BNN_IV': 1,
+        'BNN_III': 0.5, # Because vd_p and vd_m MVMs profiled separately
+        'BNN_IV': 0.5,  # Because vd_p and vd_m MVMs profiled separately
         'BNN_V': 0.5,
         'BNN_VI': 0.25,
         'TNN_I': 0.25,

@@ -535,7 +535,7 @@ def run_experiments(exp: ExpConfig,
             for c_idx, c in enumerate(cfgs)
         ]
 
-        with multiprocessing.Pool(processes=n_jobs) as pool:
+        with multiprocessing.Pool(processes=n_jobs, maxtasksperchild=1) as pool:
             res = pool.map(_run_single_experiment_wrapper, args_list)
 
     for cfg, top1, top5, top1_batch, top5_batch, sim_time_batch_ns, stats in res:
