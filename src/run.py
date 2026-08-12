@@ -21,6 +21,7 @@ import sys
 import tvm
 import ast
 import os
+import gc
 
 from experiment import ExpConfig, SimulationStats
 from model_parser import get_model_name
@@ -278,7 +279,7 @@ def _run_single_experiment(
         emu_lib = _load_emulator_lib()
     else:
         print(f"Start Accuracy Simulation ({c_idx + 1}/{num_c})")
-        acs_int, acs_lib = _load_xbar_simulator_lib(c, n_sim_threads)
+        acs_py, acs_lib = _load_xbar_simulator_lib(c, n_sim_threads)
 
     n_classes, (train_images, train_labels), (test_images, test_labels) = data
 
@@ -363,33 +364,35 @@ def _run_single_experiment(
             stats = SimulationStats(
                 config=c,
                 config_idx=c_idx + c_idx_offset,
-                cycles_p=acs_int.cycles_p(),
-                cycles_m=acs_int.cycles_m(),
-                write_ops=acs_int.write_ops(),
-                mvm_ops=acs_int.mvm_ops(),
-                refresh_ops=acs_int.refresh_ops(),
-                refresh_cell_ops=acs_int.refresh_cell_ops())
+                cycles_p=acs_py.cycles_p(),
+                cycles_m=acs_py.cycles_m(),
+                write_ops=acs_py.write_ops(),
+                mvm_ops=acs_py.mvm_ops(),
+                refresh_ops=acs_py.refresh_ops(),
+                refresh_cell_ops=acs_py.refresh_cell_ops())
         else:
             # If read disturb is not simulated, some parameters do not exist
             stats = SimulationStats(config=c,
                                     config_idx=c_idx + c_idx_offset,
                                     cycles_p=None,
                                     cycles_m=None,
-                                    write_ops=acs_int.write_ops(),
-                                    mvm_ops=acs_int.mvm_ops(),
+                                    write_ops=acs_py.write_ops(),
+                                    mvm_ops=acs_py.mvm_ops(),
                                     refresh_ops=None,
                                     refresh_cell_ops=None)
 
         # Dump profiling data
         if c.get("adc_profile"):
             adc_profile_filename = f"{result_path}/adc_prof_{stats.config_idx}.json"
-            acs_int.dump_adc_profile(adc_profile_filename)
+            acs_py.dump_adc_profile(adc_profile_filename)
         if c.get("mvm_profile"):
             mvm_profile_filename = f"{result_path}/mvm_prof_{stats.config_idx}.json"
-            acs_int.dump_mvm_profile(mvm_profile_filename)
+            acs_py.dump_mvm_profile(mvm_profile_filename)
 
-        del acs_int
+        acs_py.reset()
+        del acs_py
         del acs_lib
+        gc.collect()
 
     return c, top1_perc, top5_perc, top1_batch, top5_batch, sim_time_batch_ns, stats
 
@@ -535,7 +538,7 @@ def run_experiments(exp: ExpConfig,
             for c_idx, c in enumerate(cfgs)
         ]
 
-        with multiprocessing.Pool(processes=n_jobs, maxtasksperchild=1) as pool:
+        with multiprocessing.Pool(processes=n_jobs) as pool:
             res = pool.map(_run_single_experiment_wrapper, args_list)
 
     for cfg, top1, top5, top1_batch, top5_batch, sim_time_batch_ns, stats in res:
