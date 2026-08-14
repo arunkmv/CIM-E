@@ -29,13 +29,15 @@ class ArchAttrs():
 
     # Optional fields
     read_pulse_width: float = 1e-08
-    cycle_seconds: float = 1e-07                
+    cycle_seconds: float = 1e-07
     voltage: int = 1
     threshold_voltage: float = 0
     tech_node: float = 65e-09
     adc_resolution: int = 8
-    adder_col_scale: float = 0       # Adders per column (based on mapping and MVM profiling)
-    adc_col_scale: float = 1         # ADC conversions per column (based on mapping)
+    # Adders per column (based on mapping and MVM profiling)
+    adder_col_scale: float = 0
+    # ADC conversions per column (based on mapping)
+    adc_col_scale: float = 1
 
     # Derived/constant fields
     cols_active_at_once: int = field(init=False)
@@ -115,7 +117,7 @@ class ArchAttrs():
             'throughput': self.throughput,
             'n_adcs': 1,
         }
-    
+
     def get_shift_adder_components_kwargs(self) -> dict:
         """Get a dict of parameters to be passed to a post-processing adder."""
         return {
@@ -125,7 +127,6 @@ class ArchAttrs():
             'shift_register_n_bits': self.adc_resolution + 1,
             'n_instances': self.n_instances,
         }
-
 
 
 @dataclass(frozen=True)
@@ -152,7 +153,7 @@ class BaseEnergyModel(ABC):
     @abstractmethod
     def get_write_energy(self, mvm_attrs: MVMAttrs) -> float:
         ...
-    
+
     @property
     def name(self):
         return self._name
@@ -168,11 +169,13 @@ class RowDriverEnergyModel(BaseEnergyModel):
     """Row driver energy model."""
 
     def get_mvm_energy(self, mvm_attrs: MVMAttrs) -> float:
-        row_driver_comp = RowDrivers(**self._get_neurosim_component_kwargs(mvm_attrs))
+        row_driver_comp = RowDrivers(
+            **self._get_neurosim_component_kwargs(mvm_attrs))
         return row_driver_comp.read().energy
-        
+
     def get_write_energy(self, mvm_attrs: MVMAttrs) -> float:
-        row_driver_comp = RowDrivers(**self._get_neurosim_component_kwargs(mvm_attrs))
+        row_driver_comp = RowDrivers(
+            **self._get_neurosim_component_kwargs(mvm_attrs))
         return row_driver_comp.write().energy
 
 
@@ -180,12 +183,18 @@ class MemristorEnergyModel(BaseEnergyModel):
     """Memristor energy model."""
 
     def get_mvm_energy(self, mvm_attrs: MVMAttrs) -> float:
-        memory_cell_comp = MemoryCell(**self._get_neurosim_component_kwargs(mvm_attrs))
-        return memory_cell_comp.read().energy * mvm_attrs.active_rows * mvm_attrs.active_rows
+        memory_cell_comp = MemoryCell(
+            **self._get_neurosim_component_kwargs(mvm_attrs))
+        return (memory_cell_comp.read().energy *
+                mvm_attrs.active_rows *
+                mvm_attrs.active_rows)
 
     def get_write_energy(self, mvm_attrs: MVMAttrs) -> float:
-        memory_cell_comp = MemoryCell(**self._get_neurosim_component_kwargs(mvm_attrs))
-        return memory_cell_comp.write().energy * mvm_attrs.active_rows * mvm_attrs.active_rows
+        memory_cell_comp = MemoryCell(
+            **self._get_neurosim_component_kwargs(mvm_attrs))
+        return (memory_cell_comp.write().energy *
+                mvm_attrs.active_rows *
+                mvm_attrs.active_rows)
 
 
 class ADCEnergyModel(BaseEnergyModel):
@@ -193,7 +202,9 @@ class ADCEnergyModel(BaseEnergyModel):
 
     def get_mvm_energy(self, mvm_attrs: MVMAttrs) -> float:
         adc_comp = ADC(**self._arch_attrs.get_adc_component_kwargs())
-        return adc_comp.convert().energy * mvm_attrs.active_cols * self._arch_attrs.adc_col_scale
+        return (adc_comp.convert().energy *
+                mvm_attrs.active_cols *
+                self._arch_attrs.adc_col_scale)
 
     def get_write_energy(self, mvm_attrs: MVMAttrs) -> float:
         return 0.0
@@ -203,8 +214,11 @@ class AdderEnergyModel(BaseEnergyModel):
     """Shift Adder energy model."""
 
     def get_mvm_energy(self, mvm_attrs: MVMAttrs) -> float:
-        adder_comp = ShiftAdd(**self._arch_attrs.get_shift_adder_components_kwargs())
-        return adder_comp.add().energy * mvm_attrs.active_cols * self._arch_attrs.adder_col_scale
+        adder_comp = ShiftAdd(
+            **self._arch_attrs.get_shift_adder_components_kwargs())
+        return (adder_comp.add().energy *
+                mvm_attrs.active_cols *
+                self._arch_attrs.adder_col_scale)
 
     def get_write_energy(self, mvm_attrs: MVMAttrs) -> float:
         return 0.0
@@ -216,27 +230,35 @@ class CrossbarEnergyModel(BaseEnergyModel):
     Integrates sub-components and provides per component energy.
     """
 
-    def __init__(self, name: str, arch_attrs: ArchAttrs):
+    def __init__(self,
+                 name: str,
+                 arch_attrs: ArchAttrs,
+                 with_adders: bool = True):
         super().__init__(name, arch_attrs)
-        self.row_driver = RowDriverEnergyModel(name + ".row_driver", arch_attrs)
-        self.memristors = MemristorEnergyModel(name + ".memristors", arch_attrs)
+        self.row_driver = RowDriverEnergyModel(
+            name + ".row_driver", arch_attrs)
+        self.memristors = MemristorEnergyModel(
+            name + ".memristors", arch_attrs)
         self.adcs = ADCEnergyModel(name + ".adcs", arch_attrs)
-        self.adders = AdderEnergyModel(name + ".adders", arch_attrs)
-        self.components = [self.row_driver, self.memristors, self.adcs, self.adders]
-        
+        self.components = [self.row_driver,
+                           self.memristors, self.adcs]
+        if with_adders:
+            self.adders = AdderEnergyModel(name + ".adders", arch_attrs)
+            self.components.append(self.adders)
+
     def get_mvm_energy(self, mvm_attrs: MVMAttrs) -> dict:
-        return {c.name : c.get_mvm_energy(mvm_attrs) for c in self.components}
+        return {c.name: c.get_mvm_energy(mvm_attrs) for c in self.components}
 
     def get_write_energy(self, mvm_attrs: MVMAttrs) -> dict:
-        return {c.name : c.get_write_energy(mvm_attrs) for c in self.components}
+        return {c.name: c.get_write_energy(mvm_attrs) for c in self.components}
 
 
-def run_single_energy_estimation(mvm_profile: dict, 
-                                 cell_config: str, 
-                                 xbar_size: tuple, 
-                                 hrs_lrs: tuple, 
-                                 read_voltage: float, 
-                                 adc_resolution: int, 
+def run_single_energy_estimation(mvm_profile: dict,
+                                 cell_config: str,
+                                 xbar_size: tuple,
+                                 hrs_lrs: tuple,
+                                 read_voltage: float,
+                                 adc_resolution: int,
                                  m_mode: str,
                                  tech_node: float,
                                  cycle_seconds: float
@@ -246,22 +268,22 @@ def run_single_energy_estimation(mvm_profile: dict,
     # memristor energy).
     read_voltage = abs(read_voltage)
     # Convert HRS/LRS current (uA) to min/max conductance (S)
-    g_min, g_max = (cur / read_voltage * 1e-6  for cur in hrs_lrs)
+    g_min, g_max = (cur / read_voltage * 1e-6 for cur in hrs_lrs)
 
     # Adder scaling for different BNN/TNN mappings.
     # TODO: Support for int mappings (bit slicing)
     bt_adder_scales = {
-        'BNN_I': 0.5,   # 1 addition per 2 columns for digital correction
-        'BNN_II': 0.5,  # 1 addition per 2 columns for digital correction
-        'BNN_III': 1,   # 1 addition per MVM for digital correction and accumulation
-        'BNN_IV': 1,    # 1 addition per MVM for digital correction and accumulation 
-        'BNN_V': 1,     # 1 addition per column for digital correction
-        'BNN_VI': 0,    # No addition
-        'TNN_I': 0,     # No addition
-        'TNN_II': 0.5,  # 1 addition per 2 columns for digital correction/accumulation
-        'TNN_III': 0.5, # 1 addition per 2 columns for digital correction/accumulation
-        'TNN_IV': 1,    # 1 addition per MVM for digital correction and accumulation
-        'TNN_V': 1,     # 1 addition per MVM for digital correction and accumulation
+        'BNN_I': 0.5,    # 1 addition per 2 columns for digital correction
+        'BNN_II': 0.5,   # 1 addition per 2 columns for digital correction
+        'BNN_III': 1,    # 1 addition per MVM for digital correction and accumulation
+        'BNN_IV': 1,     # 1 addition per MVM for digital correction and accumulation
+        'BNN_V': 1,      # 1 addition per column for digital correction
+        'BNN_VI': 0,     # No addition
+        'TNN_I': 0,      # No addition
+        'TNN_II': 0.5,   # 1 addition per 2 columns for digital correction/accumulation
+        'TNN_III': 0.5,  # 1 addition per 2 columns for digital correction/accumulation
+        'TNN_IV': 1,     # 1 addition per MVM for digital correction and accumulation
+        'TNN_V': 1,      # 1 addition per MVM for digital correction and accumulation
     }
 
     # ADC scaling indicating number of ADCs per active column.
@@ -284,7 +306,7 @@ def run_single_energy_estimation(mvm_profile: dict,
     bt_mac_scales = {
         'BNN_I': 0.5,
         'BNN_II': 0.5,
-        'BNN_III': 0.5, # Because vd_p and vd_m MVMs profiled separately
+        'BNN_III': 0.5,  # Because vd_p and vd_m MVMs profiled separately
         'BNN_IV': 0.5,  # Because vd_p and vd_m MVMs profiled separately
         'BNN_V': 0.5,
         'BNN_VI': 0.25,
@@ -297,8 +319,8 @@ def run_single_energy_estimation(mvm_profile: dict,
 
     arch_attrs: ArchAttrs = ArchAttrs(
         cell_config=cell_config,
-        rows=xbar_size[0],
-        cols=xbar_size[1],
+        rows=xbar_size[1],
+        cols=xbar_size[0],
         g_min=g_min,
         g_max=g_max,
         read_voltage=read_voltage,
@@ -308,11 +330,15 @@ def run_single_energy_estimation(mvm_profile: dict,
         tech_node=tech_node,
         cycle_seconds=cycle_seconds
     )
-    
+
     cem: CrossbarEnergyModel = CrossbarEnergyModel("crossbar", arch_attrs)
+    component_names = [c.name for c in cem.components]
     energy_estimates: dict = {}
     for l, l_prof in mvm_profile.items():
         num_macs = 0
+        tot_mvms = 0
+        tot_cols = 0
+        tot_rows = 0
         if l not in energy_estimates:
             energy_estimates[l] = defaultdict(float)
         for hists in l_prof:
@@ -322,20 +348,30 @@ def run_single_energy_estimation(mvm_profile: dict,
             for kv in hists["histogram"]["hist"]:
                 average_input_value = kv[0]
                 num_mvms = kv[1]
-                mvm_attrs = MVMAttrs(active_rows, 
-                                     active_cols, 
-                                     average_cell_value, 
+                mvm_attrs = MVMAttrs(active_rows,
+                                     active_cols,
+                                     average_cell_value,
                                      average_input_value)
 
-                num_macs += num_mvms * active_rows * active_cols * bt_mac_scales[m_mode]
+                num_macs += num_mvms * active_rows * \
+                    active_cols * bt_mac_scales[m_mode]
+                tot_mvms += num_mvms
+                tot_cols += active_cols * num_mvms
+                tot_rows += active_rows * num_mvms
                 mvm_energy = cem.get_mvm_energy(mvm_attrs)
                 for c, e in mvm_energy.items():
                     energy_estimates[l][c] += e * num_mvms
+        energy_estimates[l]["tot_energy"] = sum(
+            [energy_estimates[l][cn] for cn in component_names])
         energy_estimates[l]["num_macs"] = num_macs
-                
+        energy_estimates[l]["num_mvms"] = tot_mvms
+        energy_estimates[l]["col_util"] = tot_cols / (tot_mvms * xbar_size[0])
+        energy_estimates[l]["row_util"] = tot_rows / (tot_mvms * xbar_size[1])
+
     return energy_estimates
 
-def run_energy_estimation(df: pd.DataFrame, 
+
+def run_energy_estimation(df: pd.DataFrame,
                           profiles: dict[int, dict],
                           args) -> dict:
     """Run energy estimation for all MVM profiles in a configuration sweep."""
@@ -343,7 +379,8 @@ def run_energy_estimation(df: pd.DataFrame,
     for c, p in profiles.items():
         df_c = df[df['config_idx'] == c]
         if len(df_c) != 1:
-            msg = f"Expected exactly one entry for config_idx={c}, got {len(df_c)}"
+            msg = f"Expected exactly one entry for config_idx={
+                c}, got {len(df_c)}"
             raise ValueError(msg)
         row = df_c.iloc[0]
 
@@ -365,23 +402,23 @@ def run_energy_estimation(df: pd.DataFrame,
         tech_node = args.tech_node * 1e-9
         cycle_seconds = args.cycle_period * 1e-9
 
-        energy_estimates[c] = run_single_energy_estimation(p, 
+        energy_estimates[c] = run_single_energy_estimation(p,
                                                            cell_config,
                                                            xbar_size,
                                                            hrs_lrs,
                                                            read_voltage,
                                                            adc_resolution,
-                                                           m_mode, 
+                                                           m_mode,
                                                            tech_node,
                                                            cycle_seconds)
-        
+
     return energy_estimates
 
 
 def main(args):
     """Energy estimation utility that uses results of an MVM profiling
     run to compute per-layer energy estimates.
-    
+
     The output is dumped as a JSON file to experiment results directory.
     """
     exp_name = args.config.split('/')[-1].split('.json')[0]
@@ -398,9 +435,9 @@ def main(args):
 
     with open(store_path, 'w') as json_out_file:
         json.dump(energy_estimates, json_out_file, indent=4)
-        
 
-if __name__=="__main__":
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--config',
                         type=str,
@@ -416,7 +453,7 @@ if __name__=="__main__":
                         type=int,
                         help='Technology node in nanometers',
                         default=65)
-    
+
     parser.add_argument('--cycle_period',
                         type=int,
                         help="Cycle period in nanoseconds",
@@ -424,4 +461,3 @@ if __name__=="__main__":
 
     args = parser.parse_args()
     main(args)
-
