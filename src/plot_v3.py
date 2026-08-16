@@ -7,6 +7,7 @@
 ##############################################################################
 import matplotlib.pyplot as plt
 import matplotlib.lines as mlines
+import matplotlib.patches as mpatches
 from matplotlib import rc, ticker
 import pandas as pd
 import numpy as np
@@ -80,7 +81,7 @@ rc('text', usetex=True)
 rc('text.latex', preamble="\\usepackage{libertine}")
 title_fontsize = 12
 tick_fontsize = 8
-label_fontsize = 11
+label_fontsize = 10
 legend_fontsize = 8
 
 # title_fontsize = 16
@@ -95,6 +96,10 @@ fig_height = 3
 # Other helpers
 times_str = r"$\times$"
 nn_labels = {"VGG7": "VGG-7", "LeNet": "LeNet-5"}
+bnn_mode_labels = [
+    "BNN_I", "BNN_II", "BNN_III", "BNN_IV", "BNN_V", "BNN_VI"
+]
+tnn_mode_labels = ["TNN_I", "TNN_II", "TNN_III", "TNN_IV", "TNN_V"]
 
 
 def energy_efficiency_plot(df: pd.DataFrame,
@@ -103,11 +108,6 @@ def energy_efficiency_plot(df: pd.DataFrame,
                            d_cat: list,
                            energy_estimates: dict,
                            plt_legend: bool = True):
-
-    bnn_mode_labels = [
-        "BNN_I", "BNN_II", "BNN_III", "BNN_IV", "BNN_V", "BNN_VI"
-    ]
-    tnn_mode_labels = ["TNN_I", "TNN_II", "TNN_III", "TNN_IV", "TNN_V"]
 
     for nn_name in list(df['nn_name'].unique()):
         print(f"Generate plots for {nn_name}.")
@@ -166,15 +166,14 @@ def energy_efficiency_plot(df: pd.DataFrame,
                     mpjs.append(tot_macs / tot_energy)
                     xus.append(xbar_util / tot_mvms)
 
-                zo = mm_set.index(mm)
+                zo = mm_set.index(mm) * 10
                 axs[n].plot(xs_strs,
                             mpjs,
                             marker=marker_mode[mm],
-                            label=f"{mm.replace('NN_', ' ')}",
                             color=color_mode[mm],
                             zorder=zo)
                 sec_axs[n].plot(xs_strs,
-                                [xu + zo*0.005 for xu in xus],
+                                [xu + zo*0.0005 for xu in xus],
                                 color=color_mode[mm],
                                 alpha=0.7,
                                 linestyle=':',
@@ -186,7 +185,7 @@ def energy_efficiency_plot(df: pd.DataFrame,
             axs[n].set_xlabel("Crossbar Sizes",
                               fontsize=label_fontsize)
 
-            axs[n].grid(axis='y', linestyle=':', color=grid_color)
+            axs[n].grid(axis='y', linestyle=':', color=grid_color, zorder=0)
 
             y_min = min(ax.get_ylim()[0] for ax in axs)
             y_max = max(ax.get_ylim()[1] for ax in axs)
@@ -237,6 +236,164 @@ def energy_efficiency_plot(df: pd.DataFrame,
         dpi=300)
 
 
+def per_layer_energy_plot(df: pd.DataFrame,
+                          store_path: str,
+                          s_cat: list,
+                          d_cat: list,
+                          energy_estimates: dict,
+                          nn_name: str | None = None,
+                          plt_legend: bool = True):
+    bar_width = 0.5
+    size_gap = 0.4
+    layer_gap = 1
+    components = {"DAC": ["crossbar.row_driver"],
+                  "Memristor Array": ["crossbar.memristors"],
+                  "ADC + Accumulate": ["crossbar.adcs", "crossbar.adders"]}
+    color_component = {"DAC": colors[6],
+                       "Memristor Array": colors[7],
+                       "ADC + Accumulate": colors[8]}
+
+    for nn_name in (list(df['nn_name'].unique()) if not nn_name else [nn_name]):
+        print(f"Generate plots for {nn_name}.")
+        df_nn = df[(df['nn_name'] == nn_name)]
+
+        if 'num_runs' in d_cat:
+            max_num_runs = max(df_nn['num_runs'].unique())
+            df_nn = df_nn[(df_nn['num_runs'] == max_num_runs)]
+
+        xbar_sizes = df_nn['xbar_size'].unique()
+        xs_strs = {xs: xs[1:-1].replace(', ', times_str) for xs in xbar_sizes}
+
+        # Count modes in experiment
+        m_modes = list(df_nn['m_mode'].unique())
+        bnn_modes = [bm for bm in bnn_mode_labels if bm in m_modes]
+        tnn_modes = [tm for tm in tnn_mode_labels if tm in m_modes]
+        mm_sets = {'BNN': bnn_modes, 'TNN': tnn_modes}
+
+        layers = energy_estimates[str(
+            df_nn.loc[:, "config_idx"].iloc[0])].keys()
+        print(f"Layers: {layers}.")
+
+        for mm_set_name, mm_set in mm_sets.items():
+            if len(mm_set) > 0:
+                fig, (ax, sec_ax) = plt.subplots(
+                    2, 1, figsize=(fig_width, fig_height), sharex=True,
+                    gridspec_kw={"height_ratios": [2, 1], "hspace": 0.0},
+                    layout='tight'
+                )
+                pos_offset = 0.0
+                layer_ticks: list[tuple] = []
+                for x, l_name in enumerate(layers):
+                    l_start = pos_offset
+                    for y, xs in enumerate(xbar_sizes):
+                        size_start = pos_offset
+                        for z, mm in enumerate(mm_set):
+                            df_xs_mm = df_nn[
+                                (df_nn['xbar_size'] == xs) &
+                                (df_nn['m_mode'] == mm)]
+                            c_idx = str(df_xs_mm.loc[:, "config_idx"].iloc[0])
+                            energy = energy_estimates[c_idx][l_name]["tot_energy"]
+                            ax.bar(
+                                pos_offset,
+                                energy,
+                                width=bar_width,
+                                color=color_mode[mm],
+                                edgecolor="white",
+                                linewidth=0.3,
+                                zorder=10
+                            )
+
+                            bottom = 0.0
+                            for c_name, comps in components.items():
+                                norm_comp_energy = sum(
+                                    [energy_estimates[c_idx][l_name][c] for c in comps]) / energy
+                                sec_ax.bar(
+                                    pos_offset,
+                                    norm_comp_energy,
+                                    bottom=bottom,
+                                    width=bar_width,
+                                    color=color_component[c_name],
+                                    edgecolor="white",
+                                    linewidth=0.3)
+                                bottom += norm_comp_energy
+
+                            pos_offset += bar_width
+                        sec_ax.text(
+                            (size_start + pos_offset - bar_width) / 2,
+                            -0.1,
+                            xs_strs[xs],
+                            transform=sec_ax.get_xaxis_transform(),
+                            ha="center",
+                            va="top",
+                            fontsize=legend_fontsize,
+                            rotation=0,
+                            color="dimgray")
+                        pos_offset += size_gap
+                    pos_offset -= size_gap
+                    layer_ticks.append(
+                        ((l_start + pos_offset - bar_width) / 2, l_name))
+                    if x != len(layers) - 1:
+                        ax.axvline((pos_offset + (layer_gap - bar_width) / 2),
+                                   color="grey", linewidth=0.6, linestyle=":")
+                        sec_ax.axvline((pos_offset + (layer_gap - bar_width) / 2),
+                                       color="grey", linewidth=0.6, linestyle=":")
+                    pos_offset += layer_gap
+
+                ax.grid(axis='y', linestyle=':', color=grid_color)
+                ax.set_ylabel("Energy\nConsumption (J)",
+                              fontsize=label_fontsize, wrap=True)
+                ax.set_yscale("log")
+                ax.tick_params(axis="x", bottom=False, labelbottom=False)
+                ax.spines["bottom"].set_linewidth(1.1)
+
+                sec_ax.set_ylabel("Norm.\nComponent\nEnergy",
+                                  fontsize=label_fontsize, wrap=True)
+                sec_ax.set_xticks([c for c, _ in layer_ticks])
+                sec_ax.set_xticklabels(
+                    [lbl for _, lbl in layer_ticks], fontsize=label_fontsize)
+                sec_ax.tick_params(axis='x', pad=12, top=False)
+                sec_ax.set_ylim(1.05, 0)
+                sec_ax.spines["top"].set_linewidth(1.1)
+
+                ax.set_title(f"Per Layer Energy - {nn_name} - {mm_set_name}")
+
+            if plt_legend:
+                # Create structured legend
+                # Legend for components
+                comp_color_legend = [mpatches.Patch(
+                    facecolor=color_component[c],
+                    label=c)
+                    for c in components.keys()
+                ]
+                # Legend for colors (Mapping modes)
+                mode_color_legend = [
+                    mpatches.Patch(
+                        facecolor=c,
+                        label=mm.replace('NN_', ' '))
+                    for mm, c in color_mode.items() if mm in mm_set
+                ]
+                leg1 = ax.legend(handles=mode_color_legend,
+                                 loc='upper right',
+                                 fontsize=legend_fontsize,
+                                 ncol=1,)
+                leg1.set_zorder(10)
+                ax.add_artist(leg1)
+                leg2 = ax.legend(handles=comp_color_legend,
+                                 loc='upper right',
+                                 fontsize=legend_fontsize,
+                                 ncol=1,
+                                 bbox_to_anchor=(0.93, 1.0)
+                                 )
+                leg2.set_zorder(10)
+
+            fig.savefig(
+                f"{store_path}/per_layer_energy_{nn_name}_{mm_set_name}.pdf",
+                dpi=300)
+            fig.savefig(
+                f"{store_path}/per_layer_energy_{nn_name}_{mm_set_name}.png",
+                dpi=300)
+
+
 def get_exp_products(config: str):
     exp_name = config.split('/')[-1].split('.json')[0]
     repo_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../'))
@@ -282,10 +439,15 @@ if __name__ == "__main__":
     if exp_name.startswith('mvm_profiling'):
         energy_estimates = json.load(
             open(f"{exp_result_path}/energy_estimates.json", 'r'))
-        energy_efficiency_plot(df=df,
-                               store_path=store_path,
-                               s_cat=cat_static,
-                               d_cat=cat_dynamic,
-                               energy_estimates=energy_estimates)
+        # energy_efficiency_plot(df=df,
+        #                        store_path=store_path,
+        #                        s_cat=cat_static,
+        #                        d_cat=cat_dynamic,
+        #                        energy_estimates=energy_estimates)
+        per_layer_energy_plot(df=df,
+                              store_path=store_path,
+                              s_cat=cat_static,
+                              d_cat=cat_dynamic,
+                              energy_estimates=energy_estimates)
     else:
         raise Exception(f"Plot for experiment {exp_name} not implemented.")
