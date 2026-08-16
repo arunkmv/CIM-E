@@ -28,7 +28,7 @@ class ArchAttrs():
     read_voltage: float
 
     # Optional fields
-    read_pulse_width: float = 1e-08
+    read_pulse_width: float = 1e-09
     cycle_seconds: float = 1e-07
     voltage: int = 1
     threshold_voltage: float = 0
@@ -302,19 +302,19 @@ def run_single_energy_estimation(mvm_profile: dict,
     }
 
     # Number of MAC scaling based on mappings.
-    # Active rows/cols to actual matrix sizes
+    # Active rows/cols to actual matrix sizes * logical MVMs per crossbar MVM
     bt_mac_scales = {
-        'BNN_I': 0.5,
-        'BNN_II': 0.5,
-        'BNN_III': 0.5,  # Because vd_p and vd_m MVMs profiled separately
-        'BNN_IV': 0.5,  # Because vd_p and vd_m MVMs profiled separately
-        'BNN_V': 0.5,
-        'BNN_VI': 0.25,
-        'TNN_I': 0.25,
-        'TNN_II': 0.5,
-        'TNN_III': 0.5,
-        'TNN_IV': 0.5,
-        'TNN_V': 0.5,
+        'BNN_I':   0.5 * 1,
+        'BNN_II':  0.5 * 1,
+        'BNN_III': 1 * 0.5,
+        'BNN_IV':  1 * 0.5,
+        'BNN_V':   0.5 * 1,
+        'BNN_VI':  0.25 * 1,
+        'TNN_I':   0.25 * 1,
+        'TNN_II':  0.5 * 0.5,
+        'TNN_III': 0.5 * 0.5,
+        'TNN_IV':  0.5 * 0.5,
+        'TNN_V':   0.5 * 0.5,
     }
 
     arch_attrs: ArchAttrs = ArchAttrs(
@@ -452,12 +452,12 @@ if __name__ == "__main__":
     parser.add_argument('--tech_node',
                         type=int,
                         help='Technology node in nanometers',
-                        default=65)
+                        default=32)
 
     parser.add_argument('--cycle_period',
                         type=int,
                         help="Cycle period in nanoseconds",
-                        default=100)
+                        default=10)
 
     args = parser.parse_args()
     main(args)
