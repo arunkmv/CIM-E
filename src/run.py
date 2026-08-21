@@ -34,7 +34,8 @@ def _check_pathes(acs_lib_path: str, emu_lib_path: str,
                   acs_cfg_dir: str) -> None:
     if not os.path.exists(acs_cfg_dir):
         raise Exception(
-            f"Cannot find ACS_CFG_DIR '{acs_cfg_dir}'. Please create the folder manually."
+            f"Cannot find ACS_CFG_DIR '{
+                acs_cfg_dir}'. Please create the folder manually."
         )
     global ACS_CFG_DIR
     ACS_CFG_DIR = acs_cfg_dir
@@ -126,6 +127,23 @@ def _get_dataset(
         else:
             raise ValueError("Dataset not supported")
 
+    elif nn_name in ['DenseNet28', 'ResNetE18']:
+        if nn_data_set == 'cifar100':
+            num_classes = 100
+            (train_images, train_labels), (
+                test_images,
+                test_labels) = tf.keras.datasets.cifar100.load_data()
+            train_images, train_labels, test_images, test_labels = \
+                train_images[:num_data], train_labels[:num_data], \
+                test_images[:num_data], test_labels[:num_data]
+            train_images = train_images.reshape(
+                (num_data, 32, 32, 3)).astype("float32")
+            test_images = test_images.reshape(
+                (num_data, 32, 32, 3)).astype("float32")
+            train_images, test_images = train_images / 127.5 - 1, test_images / 127.5 - 1
+        else:
+            raise ValueError("Dataset not supported")
+
     elif nn_name in ['VGG7']:
         if nn_data_set == 'cifar10':
             num_classes = 10
@@ -143,7 +161,7 @@ def _get_dataset(
         else:
             raise ValueError("Dataset not supported")
 
-    elif nn_name in ['LeNet']:
+    elif nn_name in ['LeNet5']:
         if nn_data_set == 'mnist':
             num_classes = 10
             (train_images, train_labels), (
@@ -167,39 +185,38 @@ def _get_dataset(
                                                        test_labels)
 
 
-def _check_prev_results(cfg: dict, result_path: str,
-                        exp_name: str) -> Tuple[dict, pd.DataFrame, int]:
+def _check_prev_results(cfgs: list, result_path: str,
+                        exp_name: str) -> tuple[list, pd.DataFrame, list[int]]:
     """Excludes experiments that have already been carried out.
     Args:
-        cfg (dict): Experiment configuration
+        cfgs (list): Experiment configurations
+        result_path (str): Path to results directory
         exp_name (str): Name of the experiment
     Returns:
-        dict: Reduced configuration with only 'new' simulations
+        list: Reduced configuration with only 'new' simulations
         pd.DataFrame: DataFrame including previous results
-        int: Offset for the config index in case of previous configs
+        list[int]: Config indices for database based on previous results
     """
     if not os.path.exists(result_path):
         # Don't create this here because of docker --user permissions
         raise Exception(f"Please create folder '{result_path}' first.")
 
+    reduced_cfgs = cfgs.copy()
+    db_c_idxs = list(range(len(cfgs)))
     if not os.path.exists(f"{result_path}/{exp_name}.csv"):
-        c_idx_offset = 0
         os.makedirs(result_path, exist_ok=True)
-        assert len(cfg) > 0, "Empty configuration file."
+        assert len(cfgs) > 0, "Empty configuration file."
         accuracy_results = ["top1", "top5", "top1_baseline", "top5_baseline"]
-        df_columns = list(cfg[0].keys()) + accuracy_results
+        df_columns = list(cfgs[0].keys()) + accuracy_results
         df = pd.DataFrame(columns=df_columns)
-        return cfg, df, c_idx_offset
-
     else:
         df = pd.read_csv(f"{result_path}/{exp_name}.csv")
-        c_idx_offset = len(df)
-        assert len(cfg) > 0, "Empty configuration file."
-        cfg_cols = cfg[0].keys()
+        assert len(cfgs) > 0, "Empty configuration file."
+        cfg_cols = cfgs[0].keys()
         df_to_check = df[cfg_cols]
 
         # Convert list strings to lists
-        for k, v in cfg[0].items():
+        for k, v in cfgs[0].items():
             if type(v) == list:
                 df_to_check[k] = df_to_check[k].astype(object)
                 df_to_check.loc[:, k] = df_to_check[k].apply(
@@ -207,17 +224,18 @@ def _check_prev_results(cfg: dict, result_path: str,
 
         # Remove already executed experiments
         del_count = 0
-        for entry in cfg[:]:
+        for entry in cfgs:
             mask = (df_to_check[list(
                 entry.keys())] == pd.Series(entry)).all(axis=1)
             if mask.any():
-                cfg.remove(entry)
+                db_c_idxs.remove(cfgs.index(entry))
+                reduced_cfgs.remove(entry)
                 del_count += 1
-
         print(
-            f"---{del_count} simulations removed (already executed previously)---"
+            f"---{
+                del_count} simulations removed (already executed previously)---"
         )
-        return cfg, df, c_idx_offset
+    return reduced_cfgs, df, db_c_idxs
 
 
 def _load_xbar_simulator_lib(c: dict, n_sim_threads: int):
@@ -255,7 +273,7 @@ def _run_single_experiment(
                                                           np.ndarray]],
     ideal_xbar: bool = False,
     use_same_inputs: bool = False,
-    c_idx_offset: int = 0,
+    db_c_idx: int = 0,
     result_path: str = "",
     n_sim_threads: int = 1
 ) -> Tuple[dict, float, float, List[float], List[float], List[int],
@@ -268,7 +286,7 @@ def _run_single_experiment(
         data (Tuple[int, Tuple[np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray]]): IFM/OFM data
         ideal_xbar (bool, optional): Switch off any non-idealities (if true). Defaults to False.
         use_same_inputs (bool, optional): Use the same inputs for all runs. Defaults to False.
-        c_idx_offset (int, optional): Offset for the config index in case of previous configs. Defaults to 0.
+        db_c_idx (int, optional): Actual config index for database in case of previous results. Defaults to 0.
         result_path (str): Path to experiment result directory.
         n_sim_threads (int): Number of threads spawnable by the simulator.
     Returns:
@@ -278,7 +296,8 @@ def _run_single_experiment(
         print(f"Start Baseline Accuracy Simulation ({c_idx + 1}/{num_c})")
         emu_lib = _load_emulator_lib()
     else:
-        print(f"Start Accuracy Simulation ({c_idx + 1}/{num_c})")
+        print(f"Start Accuracy Simulation ({
+              c_idx + 1}/{num_c}) - Database entry {db_c_idx}")
         acs_py, acs_lib = _load_xbar_simulator_lib(c, n_sim_threads)
 
     n_classes, (train_images, train_labels), (test_images, test_labels) = data
@@ -363,7 +382,7 @@ def _run_single_experiment(
         if 'read_disturb' in c.keys():
             stats = SimulationStats(
                 config=c,
-                config_idx=c_idx + c_idx_offset,
+                config_idx=db_c_idx,
                 cycles_p=acs_py.cycles_p(),
                 cycles_m=acs_py.cycles_m(),
                 write_ops=acs_py.write_ops(),
@@ -373,7 +392,7 @@ def _run_single_experiment(
         else:
             # If read disturb is not simulated, some parameters do not exist
             stats = SimulationStats(config=c,
-                                    config_idx=c_idx + c_idx_offset,
+                                    config_idx=db_c_idx,
                                     cycles_p=None,
                                     cycles_m=None,
                                     write_ops=acs_py.write_ops(),
@@ -383,10 +402,12 @@ def _run_single_experiment(
 
         # Dump profiling data
         if c.get("adc_profile"):
-            adc_profile_filename = f"{result_path}/adc_prof_{stats.config_idx}.json"
+            adc_profile_filename = f"{
+                result_path}/adc_prof_{stats.config_idx}.json"
             acs_py.dump_adc_profile(adc_profile_filename)
         if c.get("mvm_profile"):
-            mvm_profile_filename = f"{result_path}/mvm_prof_{stats.config_idx}.json"
+            mvm_profile_filename = f"{
+                result_path}/mvm_prof_{stats.config_idx}.json"
             acs_py.dump_mvm_profile(mvm_profile_filename)
 
         acs_py.reset()
@@ -510,13 +531,14 @@ def run_experiments(exp: ExpConfig,
     cfgs = exp.iterate_sweep()
 
     result_path = f"{repo_path}/results/{exp_name}"
-    cfgs, df, c_idx_offset = _check_prev_results(cfgs, result_path, exp_name)
+    cfgs, df, db_c_idxs = _check_prev_results(cfgs, result_path, exp_name)
 
     print(
-        f"---Execute experiment '{exp_name}': {len(cfgs)} simulations pending---"
+        f"---Execute experiment '{exp_name}': {
+            len(cfgs)} simulations pending---"
     )
     if len(cfgs) == 0:
-        sys.exit(0)
+        return
 
     datasets = _get_all_datasets(cfgs, use_same_inputs)
 
@@ -525,17 +547,17 @@ def run_experiments(exp: ExpConfig,
 
     if dbg:
         res = []
-        for c_idx, c in enumerate(cfgs):
+        for (c_idx, c), db_c_idx in zip(enumerate(cfgs), db_c_idxs):
             res.append(
                 _run_single_experiment(c, c_idx, len(cfgs),
                                        _get_matching_dataset(c, datasets),
-                                       False, use_same_inputs, c_idx_offset,
+                                       False, use_same_inputs, db_c_idx,
                                        result_path, n_sim_threads))
     else:
         args_list = [
             (c, c_idx, len(cfgs), _get_matching_dataset(c, datasets), False,
-             use_same_inputs, c_idx_offset, result_path, n_sim_threads)
-            for c_idx, c in enumerate(cfgs)
+             use_same_inputs, db_c_idx, result_path, n_sim_threads)
+            for (c_idx, c), db_c_idx in zip(enumerate(cfgs), db_c_idxs)
         ]
 
         with multiprocessing.Pool(processes=n_jobs) as pool:
@@ -558,6 +580,7 @@ def run_experiments(exp: ExpConfig,
         cfg.pop('adc_calib_dict', None)
         cfg.update(metrics)
         df = pd.concat([df, pd.DataFrame([cfg])], ignore_index=True)
+        df["config_idx"] = df["config_idx"].astype(int)
 
         # Save stats
         if save_sim_stats:
