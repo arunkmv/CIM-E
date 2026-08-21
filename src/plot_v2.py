@@ -80,7 +80,7 @@ fig_height = 3
 
 # Other helpers
 times_str = r"$\times$"
-nn_labels = {"VGG7": "VGG-7", "LeNet": "LeNet-5"}
+nn_labels = {"VGG7": "VGG-7", "LeNet": "LeNet-5", "LeNet5": "LeNet-5"}
 
 
 def adc_profile_plot(df: pd.DataFrame, store_path: str, s_cat: list,
@@ -219,7 +219,8 @@ def adc_calibration_plot(df: pd.DataFrame,
                     for n, xs in enumerate(xbar_sizes):
                         print(f"Plotting for {mm_set_name}: {xs}")
                         axs[n].set_title(
-                            f"{nn_labels[nn_name]} - {mm_set_name} - {xs[1:-1].replace(', ', times_str)}",
+                            f"{nn_labels[nn_name]} - {mm_set_name} - {
+                                xs[1:-1].replace(', ', times_str)}",
                             fontsize=title_fontsize)
                         df_xs_mms = df_nn[(df_nn['xbar_size'] == xs) & (
                             df_nn['m_mode'].str.startswith(mm_set_name))]
@@ -337,7 +338,8 @@ def scale_variability_plot(df: pd.DataFrame,
                         for n, xs in enumerate(xbar_sizes):
                             print(f"Plotting for {mm_set_name}: {xs}")
                             axs[n].set_title(
-                                f"Crossbar Size: {xs[1:-1].replace(', ', times_str)}"
+                                f"Crossbar Size: {
+                                    xs[1:-1].replace(', ', times_str)}"
                             )
                             df_xs_mms = df_hrs_lrs[
                                 (df_hrs_lrs['xbar_size'] == xs)
@@ -359,9 +361,9 @@ def scale_variability_plot(df: pd.DataFrame,
                                 print(f"Best results for {nn_name} and {mm}:")
                                 best_of = df_xs_mm[(df_xs_mm['top1'] >= max(
                                     df_xs_mm['top1_baseline'].unique()) -
-                                                    1)].sort_values(
-                                                        by='lrs_noise',
-                                                        ascending=True)
+                                    1)].sort_values(
+                                    by='lrs_noise',
+                                    ascending=True)
                                 print(best_of[[
                                     'xbar_size', 'm_mode', 'hrs_noise',
                                     'lrs_noise', 'top1'
@@ -454,7 +456,8 @@ def scale_variability_plot_with_c2c(df: pd.DataFrame,
                         for n, xs in enumerate(xbar_sizes):
                             print(f"Plotting for {mm_set_name}: {xs}")
                             axs[n].set_title(
-                                f"{mm_set_name} - Crossbar Size: {xs[1:-1].replace(', ', times_str)}",
+                                f"{mm_set_name} - Crossbar Size: {
+                                    xs[1:-1].replace(', ', times_str)}",
                                 fontsize=title_fontsize)
                             df_xs_mms = df_hrs_lrs[
                                 (df_hrs_lrs['xbar_size'] == xs)
@@ -483,9 +486,9 @@ def scale_variability_plot_with_c2c(df: pd.DataFrame,
                                 print(f"Best results for {nn_name} and {mm}:")
                                 best_of = df_xs_mm[(df_xs_mm['top1'] >= max(
                                     df_xs_mm['top1_baseline'].unique()) -
-                                                    1)].sort_values(
-                                                        by='lrs_noise',
-                                                        ascending=True)
+                                    1)].sort_values(
+                                    by='lrs_noise',
+                                    ascending=True)
                                 print(best_of[[
                                     'xbar_size', 'm_mode', 'hrs_noise',
                                     'lrs_noise', 'top1'
@@ -591,7 +594,8 @@ def parasitics_plot(df: pd.DataFrame, store_path: str, s_cat: list,
                         print(f"Plotting for {mm_set_name}: {xs}")
 
                         axs[n].set_title(
-                            f"{mm_set_name} - Crossbar Size: {xs[1:-1].replace(', ', times_str)}",
+                            f"{mm_set_name} - Crossbar Size: {
+                                xs[1:-1].replace(', ', times_str)}",
                             fontsize=title_fontsize)
                         df_xs_mms = df_nn[(df_nn['xbar_size'] == xs) & (
                             df_nn['m_mode'].str.startswith(mm_set_name))]
@@ -676,7 +680,8 @@ def parasitics_multi_plot(df: pd.DataFrame, store_path: str, s_cat: list,
                     print(f"Plotting for {mm_set_name}: {xs}")
 
                     axs[n].set_title(
-                        f"{mm_set_name} - Crossbar Size: {xs[1:-1].replace(', ', times_str)}",
+                        f"{mm_set_name} - Crossbar Size: {
+                            xs[1:-1].replace(', ', times_str)}",
                         fontsize=title_fontsize)
                     df_xs_mms = df[(df['xbar_size'] == xs) &
                                    (df['m_mode'].str.startswith(mm_set_name))]
@@ -738,6 +743,124 @@ def parasitics_multi_plot(df: pd.DataFrame, store_path: str, s_cat: list,
                             dpi=300)
 
 
+def parasitics_norm_multi_plot(df: pd.DataFrame, store_path: str, s_cat: list,
+                               d_cat: list) -> None:
+    bnn_mode_labels = [
+        "BNN_I", "BNN_II", "BNN_III", "BNN_IV", "BNN_V", "BNN_VI"
+    ]
+    tnn_mode_labels = ["TNN_I", "TNN_II", "TNN_III", "TNN_IV", "TNN_V"]
+
+    nn_marker = {"VGG7": 'o', "LeNet5": 'x'}
+    nn_label = {"VGG7": 'VGG-7', "LeNet5": 'LeNet-5'}
+    nn_baseline_linestyle = {"VGG7": '--', "LeNet5": ':'}
+
+    def normalize_resistance(w_res: float,
+                             lrs_cur_ua: float,
+                             v_read: float) -> float:
+        lrs_current = lrs_cur_ua * 1e-6
+        lrs_cond = lrs_current / abs(v_read)
+        return w_res * lrs_cond
+
+    if 'num_runs' in d_cat:
+        max_num_runs = max(df_nn['num_runs'].unique())
+        df = df[(df['num_runs'] == max_num_runs)]
+
+    if 'w_res' in d_cat:
+        print("Found experiment for parasitic resistance (x-Axis).")
+        df = df[(df['w_res'] != 0.1)]
+        w_res = df['w_res'].unique()
+
+        xbar_sizes = df['xbar_size'].unique()
+
+        # Count modes in experiment
+        m_modes = list(df['m_mode'].unique())
+        bnn_modes = [bm for bm in bnn_mode_labels if bm in m_modes]
+        tnn_modes = [tm for tm in tnn_mode_labels if tm in m_modes]
+        mm_sets = {'BNN': bnn_modes, 'TNN': tnn_modes}
+        nn_names = df['nn_name'].unique()
+
+        for mm_set_name, mm_set in mm_sets.items():
+            if len(mm_set) > 0:
+                fig, axs = plt.subplots(1,
+                                        len(xbar_sizes),
+                                        figsize=(fig_width * len(xbar_sizes) /
+                                                 3, fig_height),
+                                        layout='tight',
+                                        sharey=True)
+                axs = axs.flatten() if len(xbar_sizes) > 1 else [axs]
+                axs[0].set_ylabel("Top-1 Accuracy (\\%)",
+                                  fontsize=label_fontsize)
+                for n, xs in enumerate(xbar_sizes):
+                    print(f"Plotting for {mm_set_name}: {xs}")
+
+                    axs[n].set_title(
+                        f"{mm_set_name} - Crossbar Size: {
+                            xs[1:-1].replace(', ', times_str)}",
+                        fontsize=title_fontsize)
+                    df_xs_mms = df[(df['xbar_size'] == xs) &
+                                   (df['m_mode'].str.startswith(mm_set_name))]
+                    for nn in nn_names:
+                        df_xs_mms_nn = df_xs_mms[df_xs_mms['nn_name'] == nn]
+                        base_top1 = df_xs_mms_nn['top1_baseline'].unique()
+                        assert len(base_top1) == 1
+                        axs[n].axhline(y=base_top1[0],
+                                       color='black',
+                                       linestyle=nn_baseline_linestyle[nn])
+                        for mm in mm_set:
+                            df_xs_mm = df_xs_mms_nn[(
+                                df_xs_mms_nn['m_mode'] == mm)].sort_values(
+                                    by='w_res')
+                            hrs, lrs = ast.literal_eval(
+                                df_xs_mm["hrs_lrs"].iloc[0])
+                            v_read = df_xs_mm["V_read"].iloc[0]
+                            axs[n].plot([normalize_resistance(wr, lrs, v_read) for wr in df_xs_mm['w_res']],
+                                        df_xs_mm['top1'],
+                                        marker=nn_marker[nn],
+                                        label=f"{mm.replace('NN_', ' ')}",
+                                        color=color_mode[mm])
+
+                    axs[n].set_xticks(w_res)
+                    axs[n].set_xscale("log")
+                    axs[n].set_xlabel(r"Norm. Parasitic Resistance",
+                                      fontsize=label_fontsize)
+                    axs[n].tick_params(axis='both', labelsize=tick_fontsize)
+
+                    axs[n].set_ylim(1, 101)
+                    axs[n].grid(axis='y', linestyle=':', color=grid_color)
+                    axs[n].grid(True, axis="x", which="both",
+                                linestyle=':', color=grid_color)
+
+                # Create structured legend
+                # Legend for markers (ADC calibration modes)
+                marker_legend = [
+                    # markersize=10,
+                    mlines.Line2D([], [],
+                                  color='black',
+                                  marker=m,
+                                  linestyle='None',
+                                  label=nn_label[nn])
+                    for nn, m in nn_marker.items()
+                ]
+                # Legend for colors (Mapping modes)
+                color_legend = [
+                    # linewidth=2,
+                    mlines.Line2D([], [],
+                                  color=c,
+                                  marker='None',
+                                  linestyle='-',
+                                  label=mm.replace('NN_', ' '))
+                    for mm, c in color_mode.items() if mm_set_name in mm
+                ]
+                axs[0].legend(handles=marker_legend + color_legend,
+                              loc='lower left',
+                              fontsize=legend_fontsize,
+                              ncol=1)
+                fig.savefig(f"{store_path}/parasitics_{mm_set_name}.pdf",
+                            dpi=300)
+                fig.savefig(f"{store_path}/parasitics_{mm_set_name}.png",
+                            dpi=300)
+
+
 def get_exp_products(config: str):
     exp_name = config.split('/')[-1].split('.json')[0]
     repo_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../'))
@@ -760,9 +883,6 @@ if __name__ == "__main__":
                         required=False)
 
     args = parser.parse_args()
-
-    with open(args.config, 'r') as json_file:
-        cfg = json.load(json_file)
 
     exp_name, repo_path, exp_result_path, df = get_exp_products(args.config)
 
@@ -798,11 +918,19 @@ if __name__ == "__main__":
                          profiles=profiles)
 
     elif exp_name.startswith('adc_calibration'):
+        with open(args.config, 'r') as json_file:
+            cfg = json.load(json_file)
         adc_calibration_plot(df=df,
                              store_path=store_path,
                              s_cat=cat_static,
                              d_cat=cat_dynamic,
-                             plt_legend=(cfg['nn_names'][0] == 'VGG7'))
+                             plt_legend=(cfg['nn_names'][0] == 'LeNet5'))
+
+    elif exp_name.startswith('parasitics_sweep'):
+        parasitics_norm_multi_plot(df=df,
+                                   store_path=store_path,
+                                   s_cat=cat_static,
+                                   d_cat=cat_dynamic)
 
     elif exp_name.startswith('parasitics'):
         if args.secondary_config:

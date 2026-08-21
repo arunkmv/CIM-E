@@ -110,7 +110,7 @@ def energy_efficiency_plot(df: pd.DataFrame,
                            plt_legend: bool = True):
 
     for nn_name in list(df['nn_name'].unique()):
-        print(f"Generate plots for {nn_name}.")
+        print(f"Generate energy efficiency plots for {nn_name}.")
         df_nn = df[(df['nn_name'] == nn_name)]
 
         if 'num_runs' in d_cat:
@@ -131,7 +131,6 @@ def energy_efficiency_plot(df: pd.DataFrame,
 
         layers = energy_estimates[str(
             df_nn.loc[:, "config_idx"].iloc[0])].keys()
-        print(f"Layers: {layers}.")
 
         fig, axs = plt.subplots(1,
                                 len(mm_sets),
@@ -166,18 +165,18 @@ def energy_efficiency_plot(df: pd.DataFrame,
                     mpjs.append(tot_macs / tot_energy)
                     xus.append(xbar_util / tot_mvms)
 
-                zo = mm_set.index(mm) * 10
+                zo = mm_set.index(mm) + 1
                 axs[n].plot(xs_strs,
                             mpjs,
                             marker=marker_mode[mm],
                             color=color_mode[mm],
                             zorder=zo)
                 sec_axs[n].plot(xs_strs,
-                                [xu + zo*0.0005 for xu in xus],
+                                [xu + zo*0.006 for xu in xus],
                                 color=color_mode[mm],
                                 alpha=0.7,
                                 linestyle=':',
-                                zorder=zo)
+                                zorder=zo * 10)
 
             axs[n].set_title(f"{nn_name} - {mm_set_name}")
             axs[n].set_ylabel("Energy Efficiency (MACs/J)",
@@ -197,7 +196,7 @@ def energy_efficiency_plot(df: pd.DataFrame,
             axs[n].tick_params(axis='both', labelsize=tick_fontsize)
             sec_axs[n].set_ylabel("Crossbar Utilization",
                                   fontsize=label_fontsize)
-            sec_axs[n].set_ylim(0.0, 1.0)
+            sec_axs[n].set_ylim(0.0, 1.05)
             sec_axs[n].tick_params(axis='y', labelsize=tick_fontsize)
 
             if plt_legend:
@@ -220,13 +219,13 @@ def energy_efficiency_plot(df: pd.DataFrame,
                                          loc='lower right',
                                          fontsize=legend_fontsize,
                                          ncol=1)
-                leg1.set_zorder(10)
+                leg1.set_zorder(100)
                 sec_axs[n].add_artist(leg1)
                 leg2 = sec_axs[n].legend(handles=color_legend,
                                          loc='upper left',
                                          fontsize=legend_fontsize,
                                          ncol=3)
-                leg2.set_zorder(10)
+                leg2.set_zorder(100)
 
     fig.savefig(
         f"{store_path}/energy_efficiency_{nn_name}.pdf",
@@ -254,7 +253,7 @@ def per_layer_energy_plot(df: pd.DataFrame,
                        "ADC + Accumulate": colors[8]}
 
     for nn_name in (list(df['nn_name'].unique()) if not nn_name else [nn_name]):
-        print(f"Generate plots for {nn_name}.")
+        print(f"Generate per-layer energy plots for {nn_name}.")
         df_nn = df[(df['nn_name'] == nn_name)]
 
         if 'num_runs' in d_cat:
@@ -436,14 +435,14 @@ if __name__ == "__main__":
 
     store_path = f"{exp_result_path}"
 
-    if exp_name.startswith('mvm_profiling'):
+    if exp_name.startswith('energy_estimation'):
         energy_estimates = json.load(
             open(f"{exp_result_path}/energy_estimates.json", 'r'))
-        # energy_efficiency_plot(df=df,
-        #                        store_path=store_path,
-        #                        s_cat=cat_static,
-        #                        d_cat=cat_dynamic,
-        #                        energy_estimates=energy_estimates)
+        energy_efficiency_plot(df=df,
+                               store_path=store_path,
+                               s_cat=cat_static,
+                               d_cat=cat_dynamic,
+                               energy_estimates=energy_estimates)
         per_layer_energy_plot(df=df,
                               store_path=store_path,
                               s_cat=cat_static,
