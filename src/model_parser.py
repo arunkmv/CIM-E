@@ -79,21 +79,46 @@ def create_experiment(cfg: dict) -> ExpConfig:
 
 def get_model_name(cfg: str) -> str:
     if cfg['m_mode'].startswith('BNN'):
-        mode = 'bnn'
+        mode = 'B'
     elif cfg['m_mode'].startswith('TNN'):
-        mode = 'tnn'
+        mode = 'T'
     else:
         raise ValueError("Unknown mode.")
 
-    m_xbar = cfg['xbar_size'][0]
-    n_xbar = cfg['xbar_size'][1]
+    # Mappable logical matrix sizes differ based on mappings
+    mappable_col_scales = {
+        "BNN_I": 0.5,
+        "BNN_II": 0.5,
+        "BNN_III": 1.0,
+        "BNN_IV": 1.0,
+        "BNN_V": 1.0,
+        "BNN_VI": 0.5,
+        "TNN_I": 0.5,
+        "TNN_II": 0.5,
+        "TNN_III": 0.5,
+        "TNN_IV": 0.5,
+        "TNN_V": 0.5,
+    }
 
-    # Special mappings
-    # if cfg['m_mode'] == "BNN_V":
-    #     m_xbar = cfg['xbar_size'][0] * 2
+    mappable_row_scales = {
+        "BNN_I": 1.0,
+        "BNN_II": 1.0,
+        "BNN_III": 1.0,
+        "BNN_IV": 1.0,
+        "BNN_V": 0.5,
+        "BNN_VI": 0.5,
+        "TNN_I": 0.5,
+        "TNN_II": 1.0,
+        "TNN_III": 1.0,
+        "TNN_IV": 1.0,
+        "TNN_V": 1.0,
+    }
 
-    if cfg['m_mode'] in ["BNN_V", "BNN_VI", "TNN_I"]:
-        n_xbar = cfg['xbar_size'][1] // 2
+    m_matrix_mappable = int(cfg['xbar_size'][0] *
+                            mappable_col_scales[cfg['m_mode']])
+    n_matrix_mappable = int(cfg['xbar_size'][1] *
+                            mappable_row_scales[cfg['m_mode']])
 
-    model_name = f"{mode}_{cfg['nn_data_set']}_{cfg['nn_name']}_b{cfg['batch']}_mxn{m_xbar}x{n_xbar}_inp{cfg['batch']}x{cfg['ifm'][0]}x{cfg['ifm'][1]}x{cfg['ifm'][2]}.so"
+    model_name = f"{cfg['nn_data_set']}_{mode}_{cfg['nn_name']}_b{cfg['batch']}_mxn{m_matrix_mappable}x{
+        n_matrix_mappable}_inp{cfg['batch']}x{cfg['ifm'][0]}x{cfg['ifm'][1]}x{cfg['ifm'][2]}.so"
     return model_name

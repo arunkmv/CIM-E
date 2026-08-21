@@ -181,7 +181,7 @@ class ExpConfig:
                 )
         self._check_paramters()
 
-    def iterate_sweep(self) -> dict:
+    def iterate_sweep(self) -> list:
         """Generate all possible sweep configurations."""
         cfg = []
         static_fields = {
