@@ -72,24 +72,34 @@ fi
 CONTAINER_FLAGS=""
 
 # Detect when docker CLI is emulated by podman (podman-docker).
+CONTAINER_FLAGS=()
+VOLUME_SUFFIX=""
+
 ENGINE_VERSION="$($CONTAINER_ENGINE --version 2>/dev/null | tr '[:upper:]' '[:lower:]')"
 IS_PODMAN_EMULATION=false
+
 if [[ "$CONTAINER_ENGINE" == "docker" ]] && [[ "$ENGINE_VERSION" == *"podman"* ]]; then
     IS_PODMAN_EMULATION=true
 fi
 
 if [[ "$CONTAINER_ENGINE" == "podman" || "$IS_PODMAN_EMULATION" == "true" ]]; then
     if podman run --help | grep -q -- "--userns=keep-id"; then
-        CONTAINER_FLAGS="--userns=keep-id"
+        CONTAINER_FLAGS+=(--userns=keep-id)
     else
-        CONTAINER_FLAGS="--userns=host"
+        CONTAINER_FLAGS+=(--userns=host)
     fi
+
+    # Workaround for SELinux labeling issues on /scratch, /net, etc.
+    CONTAINER_FLAGS+=(--security-opt label=disable)
+
+    # Do not use :Z when label=disable is used
+    VOLUME_SUFFIX=""
 else
-    CONTAINER_FLAGS="--user $(id -u):$(id -g)"
+    CONTAINER_FLAGS+=(--user "$(id -u):$(id -g)")
 fi
 
-$CONTAINER_ENGINE run -it --rm --memory=4g $CONTAINER_FLAGS \
-    -v ${PROJ_DIR}/src:/apps/src:Z \
-    -v ${PROJ_DIR}/models:/apps/models:Z \
-    -v ${PROJ_DIR}/results:/apps/results:Z \
-    cim-e $EXP_NAME $N_JOBS $USE_SAME_INPUTS $SAVE_SIM_STATS
+$CONTAINER_ENGINE run -it --rm --memory=4g "${CONTAINER_FLAGS[@]}" \
+    -v "${PROJ_DIR}/src:/apps/src${VOLUME_SUFFIX}" \
+    -v "${PROJ_DIR}/models:/apps/models${VOLUME_SUFFIX}" \
+    -v "${PROJ_DIR}/results:/apps/results${VOLUME_SUFFIX}" \
+    cim-e "$EXP_NAME" "$N_JOBS" "$USE_SAME_INPUTS" "$SAVE_SIM_STATS"
