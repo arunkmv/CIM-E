@@ -107,7 +107,8 @@ def energy_efficiency_plot(df: pd.DataFrame,
                            s_cat: list,
                            d_cat: list,
                            energy_estimates: dict,
-                           plt_legend: bool = True):
+                           plt_legend: bool = True,
+                           energy_lims: tuple | None = (0, 5e14)):
 
     for nn_name in list(df['nn_name'].unique()):
         print(f"Generate energy efficiency plots for {nn_name}.")
@@ -134,11 +135,16 @@ def energy_efficiency_plot(df: pd.DataFrame,
 
         fig, axs = plt.subplots(1,
                                 len(mm_sets),
-                                figsize=(3.7 * len(mm_sets),
+                                figsize=(fig_width * len(mm_sets) / 4,
                                          3),
-                                layout='tight')
+                                layout='tight',
+                                sharey=True)
         axs = np.atleast_1d(axs)
         sec_axs = [ax.twinx() for ax in axs]
+        for sax in sec_axs[1:]:
+            sax.sharey(sec_axs[0])
+        for sax in sec_axs[:-1]:
+            sax.tick_params(labelright=False)
 
         for n, (mm_set_name, mm_set) in enumerate(mm_sets.items()):
             for mm in mm_set:
@@ -179,25 +185,28 @@ def energy_efficiency_plot(df: pd.DataFrame,
                                 zorder=zo * 10)
 
             axs[n].set_title(f"{nn_name} - {mm_set_name}")
-            axs[n].set_ylabel("Energy Efficiency (MACs/J)",
+            axs[0].set_ylabel("Energy Efficiency (MACs/J)",
                               fontsize=label_fontsize)
             axs[n].set_xlabel("Crossbar Sizes",
                               fontsize=label_fontsize)
 
             axs[n].grid(axis='y', linestyle=':', color=grid_color, zorder=0)
 
-            y_min = min(ax.get_ylim()[0] for ax in axs)
-            y_max = max(ax.get_ylim()[1] for ax in axs)
-            padding = 0.05 * (y_max - y_min)
-            y_max += padding
-            for ax in axs:
-                ax.set_ylim(y_min, y_max)
+            if energy_lims:
+                axs[n].set_ylim(*energy_lims)
+            else:
+                y_min = min(ax.get_ylim()[0] for ax in axs)
+                y_max = max(ax.get_ylim()[1] for ax in axs)
+                padding = 0.05 * (y_max - y_min)
+                y_max += padding
+                for ax in axs:
+                    ax.set_ylim(y_min, y_max)
 
             axs[n].tick_params(axis='both', labelsize=tick_fontsize)
-            sec_axs[n].set_ylabel("Crossbar Utilization",
-                                  fontsize=label_fontsize)
-            sec_axs[n].set_ylim(0.0, 1.05)
-            sec_axs[n].tick_params(axis='y', labelsize=tick_fontsize)
+            sec_axs[-1].set_ylabel("Crossbar Utilization",
+                                   fontsize=label_fontsize)
+            sec_axs[-1].set_ylim(0.0, 1.05)
+            sec_axs[-1].tick_params(axis='y', labelsize=tick_fontsize)
 
             if plt_legend:
                 # Create structured legend
@@ -276,7 +285,7 @@ def per_layer_energy_plot(df: pd.DataFrame,
         for mm_set_name, mm_set in mm_sets.items():
             if len(mm_set) > 0:
                 fig, (ax, sec_ax) = plt.subplots(
-                    2, 1, figsize=(fig_width, fig_height), sharex=True,
+                    2, 1, figsize=(fig_width, fig_height * 0.9), sharex=True,
                     gridspec_kw={"height_ratios": [2, 1], "hspace": 0.0},
                     layout='tight'
                 )
@@ -393,6 +402,98 @@ def per_layer_energy_plot(df: pd.DataFrame,
                 dpi=300)
 
 
+def raella_energy_comparison_plot(df: pd.DataFrame,
+                                  store_path: str,
+                                  energy_estimates: dict):
+
+    print(f"Generate RAELLA comparison plot.")
+    xbar_size = "[512, 512]"
+    raella_512_resnet_values = {
+        "S":  {"ADC": 61.36, "CimUnit": 17.21, "RowDrivers": 1.94, "ShiftAdd": 3.93},
+        "WS": {"ADC": 96.76, "CimUnit": 6.88, "RowDrivers": 1.94, "ShiftAdd": 9.35},
+    }
+    hatch_mode = {'BNN': '////', 'TNN': '\\\\\\\\'}
+
+    def get_raella_efficiency(per_comp_values: dict) -> float:
+        """Convert per-component fJ/MAC to total MACs/J."""
+        return 1 / sum(per_comp_values.values()) * 1e15
+
+    def get_mapping_efficiency(per_layer_values: dict) -> float:
+        """Convert per-layer energy to total MACs/J."""
+        tot_macs = 0.0
+        tot_energy = 0.0
+        for _, l_est in per_layer_values.items():
+            tot_macs += l_est["num_macs"]
+            tot_energy += l_est["tot_energy"]
+        return tot_macs / tot_energy
+
+    # Count modes in experiment
+    df_nn_xs = df[(df['nn_name'] == "ResNetE18") &
+                  (df['xbar_size'] == xbar_size)]
+    m_modes = list(df_nn_xs['m_mode'].unique())
+    bnn_modes = [bm for bm in bnn_mode_labels if bm in m_modes]
+    tnn_modes = [tm for tm in tnn_mode_labels if tm in m_modes]
+    mm_sets = {'BNN': bnn_modes, 'TNN': tnn_modes}
+
+    bar_params: list[tuple] = []
+    baseline = get_raella_efficiency(raella_512_resnet_values["WS"])
+    pos = iter(np.arange(len(bnn_modes) + len(tnn_modes) + 2))
+
+    bar_params.append({"x_pos": next(pos),
+                       "value": 1,
+                       "color": colors[7],
+                       "label": "RAELLA\nWithout\nSpec.",
+                       "hatch": ''
+                       })
+
+    bar_params.append({"x_pos": next(pos),
+                       "value": get_raella_efficiency(raella_512_resnet_values["S"]) / baseline,
+                       "color": colors[8],
+                       "label": "RAELLA\nWith\nSpec.",
+                       "hatch": ''
+                       })
+
+    for mm_set_name, mm_set in mm_sets.items():
+        for mm in mm_set:
+            df_mm = df_nn_xs[(df_nn_xs['m_mode'] == mm)]
+            c_idx = str(df_mm.loc[:, "config_idx"].iloc[0])
+            bar_params.append({"x_pos": next(pos),
+                               "value": get_mapping_efficiency(energy_estimates[c_idx]) / baseline,
+                               "color": color_mode[mm],
+                               "label": mm.replace('NN_', ' '),
+                               "hatch": hatch_mode[mm_set_name]
+                               })
+
+    fig, ax = plt.subplots(figsize=(fig_width * 0.7, fig_height * 0.6),
+                           layout='tight')
+    bars = ax.bar(
+        [d['label'] for d in bar_params],
+        [d['value'] for d in bar_params],
+        width = 0.5,
+        color=[d['color'] for d in bar_params],
+        edgecolor="white",
+        linewidth=0.3,
+        hatch=[d['hatch'] for d in bar_params],
+    )
+
+    for bp in bar_params:
+        ax.text(bp['x_pos'], bp['value'] + 0.5, f"{bp['value']:.1f}x", ha="center", va="bottom", fontsize=legend_fontsize)
+
+    ax.set_title("Energy Efficiency Comparison (norm. to RAELLA Without Speculation)")
+    ax.set_ylabel("Norm. Energy\nEfficiency", fontsize=label_fontsize)
+    ax.tick_params(axis='both', which='both', size=label_fontsize)
+    ax.grid(axis='y', linestyle=':', color=grid_color)
+    ax.set_ylim(0, 55)
+    ax.set_yticks(range(0, 50, 20))
+
+    fig.savefig(
+        f"{store_path}/raella_energy_comparison.pdf",
+        dpi=300)
+    fig.savefig(
+        f"{store_path}/raella_energy_comparison.pdf",
+        dpi=300)
+
+
 def get_exp_products(config: str):
     exp_name = config.split('/')[-1].split('.json')[0]
     repo_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../'))
@@ -438,15 +539,20 @@ if __name__ == "__main__":
     if exp_name.startswith('energy_estimation'):
         energy_estimates = json.load(
             open(f"{exp_result_path}/energy_estimates.json", 'r'))
-        energy_efficiency_plot(df=df,
-                               store_path=store_path,
-                               s_cat=cat_static,
-                               d_cat=cat_dynamic,
-                               energy_estimates=energy_estimates)
-        per_layer_energy_plot(df=df,
-                              store_path=store_path,
-                              s_cat=cat_static,
-                              d_cat=cat_dynamic,
-                              energy_estimates=energy_estimates)
+        # energy_efficiency_plot(df=df,
+        #                        store_path=store_path,
+        #                        s_cat=cat_static,
+        #                        d_cat=cat_dynamic,
+        #                        energy_estimates=energy_estimates,
+        #                        plt_legend=(cfg['nn_names'][0] == 'LeNet5'))
+        # per_layer_energy_plot(df=df,
+        #                       store_path=store_path,
+        #                       s_cat=cat_static,
+        #                       d_cat=cat_dynamic,
+        #                       energy_estimates=energy_estimates)
+        if cfg['nn_names'][0] == 'ResNetE18':
+            raella_energy_comparison_plot(df=df,
+                                          store_path=store_path,
+                                          energy_estimates=energy_estimates)
     else:
         raise Exception(f"Plot for experiment {exp_name} not implemented.")

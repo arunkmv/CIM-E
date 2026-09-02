@@ -26,4 +26,5 @@
 	      ],
     "hrs_noise": [0.0],
     "lrs_noise": [0.0],
+    "verbose": false
 }

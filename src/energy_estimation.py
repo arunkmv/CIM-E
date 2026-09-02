@@ -31,8 +31,9 @@ class ArchAttrs():
     read_pulse_width: float = 1e-09
     cycle_seconds: float = 1e-07
     voltage: int = 1
+    mvm_latency: int = 1
     threshold_voltage: float = 0
-    tech_node: float = 65e-09
+    tech_node: float = 32e-9
     adc_resolution: int = 8
     # Adders per column (based on mapping and MVM profiling)
     adder_col_scale: float = 0
@@ -55,7 +56,8 @@ class ArchAttrs():
         object.__setattr__(self, 'n_instances', 1)
         object.__setattr__(self, 'temporal_dac_bits', 1)
         object.__setattr__(self, 'temporal_spiking', 1)
-        object.__setattr__(self, 'throughput', 1 / self.cycle_seconds)
+        object.__setattr__(self, 'throughput', 1 /
+                           (self.cycle_seconds * self.mvm_latency))
         self._update_cell_config()
 
     def _update_cell_config(self):
@@ -100,7 +102,7 @@ class ArchAttrs():
             'cols_active_at_once': self.cols_active_at_once,
             'cell_config': self.cell_config,
             'read_pulse_width': self.read_pulse_width,
-            'adc_resolution': self.adc_resolution,
+            'adc_resolution': 0,
             'temporal_dac_bits': self.temporal_dac_bits,
             'temporal_spiking': self.temporal_spiking,
             'voltage': self.voltage,
@@ -171,12 +173,12 @@ class RowDriverEnergyModel(BaseEnergyModel):
     def get_mvm_energy(self, mvm_attrs: MVMAttrs) -> float:
         row_driver_comp = RowDrivers(
             **self._get_neurosim_component_kwargs(mvm_attrs))
-        return row_driver_comp.read().energy
+        return row_driver_comp.read().energy * mvm_attrs.active_rows
 
     def get_write_energy(self, mvm_attrs: MVMAttrs) -> float:
         row_driver_comp = RowDrivers(
             **self._get_neurosim_component_kwargs(mvm_attrs))
-        return row_driver_comp.write().energy
+        return row_driver_comp.write().energy * mvm_attrs.active_rows
 
 
 class MemristorEnergyModel(BaseEnergyModel):
@@ -187,14 +189,14 @@ class MemristorEnergyModel(BaseEnergyModel):
             **self._get_neurosim_component_kwargs(mvm_attrs))
         return (memory_cell_comp.read().energy *
                 mvm_attrs.active_rows *
-                mvm_attrs.active_rows)
+                mvm_attrs.active_cols)
 
     def get_write_energy(self, mvm_attrs: MVMAttrs) -> float:
         memory_cell_comp = MemoryCell(
             **self._get_neurosim_component_kwargs(mvm_attrs))
         return (memory_cell_comp.write().energy *
                 mvm_attrs.active_rows *
-                mvm_attrs.active_rows)
+                mvm_attrs.active_cols)
 
 
 class ADCEnergyModel(BaseEnergyModel):
@@ -334,39 +336,41 @@ def run_single_energy_estimation(mvm_profile: dict,
     cem: CrossbarEnergyModel = CrossbarEnergyModel("crossbar", arch_attrs)
     component_names = [c.name for c in cem.components]
     energy_estimates: dict = {}
-    for l, l_prof in mvm_profile.items():
+    for l_name, l_prof in mvm_profile.items():
         num_macs = 0
         tot_mvms = 0
         tot_cols = 0
         tot_rows = 0
-        if l not in energy_estimates:
-            energy_estimates[l] = defaultdict(float)
+        if l_name not in energy_estimates:
+            energy_estimates[l_name] = defaultdict(float)
         for hists in l_prof:
             active_rows = hists["stratum"]["rows"]
             active_cols = hists["stratum"]["cols"]
             average_cell_value = hists["stratum"]["avg_cell_val"]
             for kv in hists["histogram"]["hist"]:
-                average_input_value = kv[0]
-                num_mvms = kv[1]
-                mvm_attrs = MVMAttrs(active_rows,
-                                     active_cols,
-                                     average_cell_value,
-                                     average_input_value)
+                if num_mvms := kv[1]:
+                    average_input_value = kv[0]
+                    mvm_attrs = MVMAttrs(active_rows,
+                                         active_cols,
+                                         average_cell_value,
+                                         average_input_value)
 
-                num_macs += num_mvms * active_rows * \
-                    active_cols * bt_mac_scales[m_mode]
-                tot_mvms += num_mvms
-                tot_cols += active_cols * num_mvms
-                tot_rows += active_rows * num_mvms
-                mvm_energy = cem.get_mvm_energy(mvm_attrs)
-                for c, e in mvm_energy.items():
-                    energy_estimates[l][c] += e * num_mvms
-        energy_estimates[l]["tot_energy"] = sum(
-            [energy_estimates[l][cn] for cn in component_names])
-        energy_estimates[l]["num_macs"] = num_macs
-        energy_estimates[l]["num_mvms"] = tot_mvms
-        energy_estimates[l]["col_util"] = tot_cols / (tot_mvms * xbar_size[0])
-        energy_estimates[l]["row_util"] = tot_rows / (tot_mvms * xbar_size[1])
+                    num_macs += num_mvms * active_rows * \
+                        active_cols * bt_mac_scales[m_mode]
+                    tot_mvms += num_mvms
+                    tot_cols += active_cols * num_mvms
+                    tot_rows += active_rows * num_mvms
+                    mvm_energy = cem.get_mvm_energy(mvm_attrs)
+                    for c, e in mvm_energy.items():
+                        energy_estimates[l_name][c] += e * num_mvms
+        energy_estimates[l_name]["tot_energy"] = sum(
+            [energy_estimates[l_name][cn] for cn in component_names])
+        energy_estimates[l_name]["num_macs"] = num_macs
+        energy_estimates[l_name]["num_mvms"] = tot_mvms
+        energy_estimates[l_name]["col_util"] = tot_cols / \
+            (tot_mvms * xbar_size[0])
+        energy_estimates[l_name]["row_util"] = tot_rows / \
+            (tot_mvms * xbar_size[1])
 
     return energy_estimates
 
@@ -457,7 +461,7 @@ if __name__ == "__main__":
     parser.add_argument('--cycle_period',
                         type=int,
                         help="Cycle period in nanoseconds",
-                        default=10)
+                        default=100)
 
     args = parser.parse_args()
     main(args)
