@@ -35,6 +35,10 @@ colors = [
     cm.RWTHMagenta(),  # magenta
     cm.RWTHPetrol(),  # petrol
     cm.RWTHViolett(),  # violet
+    cm.RWTHGelb(),  # yellow
+    cm.RWTHRot(),  # red
+    cm.RWTHLila(),  # lilac
+    cm.RWTHSchwarz(),  # black
 ]
 
 grid_color = cm.RWTHSchwarz(25)
@@ -77,18 +81,27 @@ legend_fontsize = 8
 # Figure sizes
 fig_width = 12
 fig_height = 3
+small_width_scale = 0.5
+small_height_scale = 0.7
 
 # Other helpers
 times_str = r"$\times$"
-nn_labels = {"VGG7": "VGG-7", "LeNet": "LeNet-5", "LeNet5": "LeNet-5"}
+
+bnn_mode_labels = [
+    "BNN_I", "BNN_II", "BNN_III", "BNN_IV", "BNN_V", "BNN_VI"
+]
+tnn_mode_labels = ["TNN_I", "TNN_II", "TNN_III", "TNN_IV", "TNN_V"]
+
+nn_marker = {"VGG7": 'o', "LeNet5": 'x', "ResNetE18": 's', "DenseNet28": 'D'}
+nn_label = {"VGG7": 'VGG-7', "LeNet5": 'LeNet-5',
+            "ResNetE18": 'ResNetE-18', "DenseNet28": 'DenseNet-28'}
+nn_small_label = {"VGG7": 'VGG-7', "LeNet5": 'LN-5',
+                  "ResNetE18": 'RNE-18', "DenseNet28": 'DN-28'}
+nn_baseline_linestyle = {"VGG7": '--', "LeNet": ':'}
 
 
 def adc_profile_plot(df: pd.DataFrame, store_path: str, s_cat: list,
                      d_cat: list, profiles: dict[int, dict]):
-    bnn_mode_labels = [
-        "BNN_I", "BNN_II", "BNN_III", "BNN_IV", "BNN_V", "BNN_VI"
-    ]
-    tnn_mode_labels = ["TNN_I", "TNN_II", "TNN_III", "TNN_IV", "TNN_V"]
     xbar_size = "[256, 256]"
 
     for nn_name in list(df['nn_name'].unique()):
@@ -124,7 +137,7 @@ def adc_profile_plot(df: pd.DataFrame, store_path: str, s_cat: list,
                         df_nn["m_mode"] == mm)].loc[:, "config_idx"].iloc[0])
                     for i, l_name in enumerate(layers):
                         l_data = profiles[c_idx][l_name]
-                        color = colors[i]
+                        color = colors[i % len(colors)]
 
                         bins = np.array([b for b, _ in l_data["hist"]])
                         cnts = np.array([c for _, c in l_data["hist"]])
@@ -155,7 +168,10 @@ def adc_profile_plot(df: pd.DataFrame, store_path: str, s_cat: list,
                             unique_handles_labels[handle] = label
 
                     axs[n].tick_params(axis='both', labelsize=10)
-                    axs[n].grid(axis='y', linestyle=':', color=grid_color)
+                    axs[n].grid(True, axis="x", which="major",
+                                linestyle=':', color=grid_color, alpha=1.0)
+                    axs[n].grid(True, axis="x", which="minor",
+                                linestyle=':', color=grid_color, alpha=0.5)
                     axs[n].set_xlabel(r"ADC Input Current $(\mu A)$")
 
                 fig.legend(unique_handles_labels.keys(),
@@ -176,11 +192,6 @@ def adc_calibration_plot(df: pd.DataFrame,
                          s_cat: list,
                          d_cat: list,
                          plt_legend: bool = True):
-    bnn_mode_labels = [
-        "BNN_I", "BNN_II", "BNN_III", "BNN_IV", "BNN_V", "BNN_VI"
-    ]
-    tnn_mode_labels = ["TNN_I", "TNN_II", "TNN_III", "TNN_IV", "TNN_V"]
-
     adc_calib_mode_markers = {'MAX': 'x', 'CALIB': 'o'}
     adc_calib_mode_legend = {"Uncalib. ADC": 'x', "Calib. ADC": 'o'}
 
@@ -193,7 +204,7 @@ def adc_calibration_plot(df: pd.DataFrame,
             df_nn = df_nn[(df_nn['num_runs'] == max_num_runs)]
 
         if 'resolution' in d_cat:
-            print(f"Found experiment for ADC resolution (x-Axis).")
+            print("Found experiment for ADC resolution (x-Axis).")
             resolutions = df_nn['resolution'].unique()
 
             xbar_sizes = df_nn['xbar_size'].unique()
@@ -210,7 +221,7 @@ def adc_calibration_plot(df: pd.DataFrame,
                     fig, axs = plt.subplots(1,
                                             len(xbar_sizes),
                                             figsize=(2 * len(xbar_sizes),
-                                                     fig_height),
+                                                     fig_height * small_height_scale),
                                             layout='tight',
                                             sharey=True)
                     axs = axs.flatten() if len(xbar_sizes) > 1 else [axs]
@@ -219,7 +230,7 @@ def adc_calibration_plot(df: pd.DataFrame,
                     for n, xs in enumerate(xbar_sizes):
                         print(f"Plotting for {mm_set_name}: {xs}")
                         axs[n].set_title(
-                            f"{nn_labels[nn_name]} - {mm_set_name} - {
+                            f"{nn_small_label[nn_name]} - {mm_set_name} - {
                                 xs[1:-1].replace(', ', times_str)}",
                             fontsize=title_fontsize)
                         df_xs_mms = df_nn[(df_nn['xbar_size'] == xs) & (
@@ -241,7 +252,7 @@ def adc_calibration_plot(df: pd.DataFrame,
                                             label=f"{mm.replace('NN_', ' ')}",
                                             color=color_mode[mm])
 
-                        axs[n].set_ylim(1, min(100, base_top1 + 1))
+                        axs[n].set_ylim(1, 101)
                         axs[n].set_xlim(axs[n].get_xlim()[::-1])
                         axs[n].set_xticks(resolutions)
                         axs[n].tick_params(axis='both', labelsize=10)
@@ -271,7 +282,11 @@ def adc_calibration_plot(df: pd.DataFrame,
                                               label=mm.replace('NN_', ' '))
                                 for mm, c in color_mode.items() if mm in mm_set
                             ]
-                            axs[0].legend(handles=marker_legend + color_legend,
+                            axs[0].legend(handles=color_legend,
+                                          loc='lower left',
+                                          fontsize=legend_fontsize,
+                                          ncol=1)
+                            axs[-1].legend(handles=marker_legend,
                                           loc='lower left',
                                           fontsize=legend_fontsize,
                                           ncol=1)
@@ -289,11 +304,6 @@ def scale_variability_plot(df: pd.DataFrame,
                            d_cat: list,
                            state: str,
                            plt_legend_nr: int = -1) -> None:
-    bnn_mode_labels = [
-        "BNN_I", "BNN_II", "BNN_III", "BNN_IV", "BNN_V", "BNN_VI"
-    ]
-    tnn_mode_labels = ["TNN_I", "TNN_II", "TNN_III", "TNN_IV", "TNN_V"]
-
     this_label = f"{state}_noise"
     other_label = f"{'hrs' if state == 'lrs' else 'lrs'}_noise"
 
@@ -356,7 +366,7 @@ def scale_variability_plot(df: pd.DataFrame,
                                     df_xs_mms['m_mode'] == mm)].sort_values(
                                         by=this_label)
                                 print(
-                                    f"---------------------------------------------------------"
+                                    "---------------------------------------------------------"
                                 )
                                 print(f"Best results for {nn_name} and {mm}:")
                                 best_of = df_xs_mm[(df_xs_mm['top1'] >= max(
@@ -400,11 +410,6 @@ def scale_variability_plot_with_c2c(df: pd.DataFrame,
                                     d_cat: list,
                                     state: str,
                                     plt_legend: bool = True) -> None:
-    bnn_mode_labels = [
-        "BNN_I", "BNN_II", "BNN_III", "BNN_IV", "BNN_V", "BNN_VI"
-    ]
-    tnn_mode_labels = ["TNN_I", "TNN_II", "TNN_III", "TNN_IV", "TNN_V"]
-
     this_label = f"{state}_noise"
     other_label = f"{'hrs' if state == 'lrs' else 'lrs'}_noise"
 
@@ -481,7 +486,7 @@ def scale_variability_plot_with_c2c(df: pd.DataFrame,
                                     df_c2c_xs_mms['m_mode'] == mm
                                 )].sort_values(by=this_label)
                                 print(
-                                    f"---------------------------------------------------------"
+                                    "---------------------------------------------------------"
                                 )
                                 print(f"Best results for {nn_name} and {mm}:")
                                 best_of = df_xs_mm[(df_xs_mm['top1'] >= max(
@@ -553,11 +558,6 @@ def scale_variability_plot_with_c2c(df: pd.DataFrame,
 
 def parasitics_plot(df: pd.DataFrame, store_path: str, s_cat: list,
                     d_cat: list) -> None:
-    bnn_mode_labels = [
-        "BNN_I", "BNN_II", "BNN_III", "BNN_IV", "BNN_V", "BNN_VI"
-    ]
-    tnn_mode_labels = ["TNN_I", "TNN_II", "TNN_III", "TNN_IV", "TNN_V"]
-
     for nn_name in list(df['nn_name'].unique()):
         print(f"Generate plots for {nn_name}.")
         df_nn = df[(df['nn_name'] == nn_name)]
@@ -638,15 +638,6 @@ def parasitics_plot(df: pd.DataFrame, store_path: str, s_cat: list,
 
 def parasitics_multi_plot(df: pd.DataFrame, store_path: str, s_cat: list,
                           d_cat: list) -> None:
-    bnn_mode_labels = [
-        "BNN_I", "BNN_II", "BNN_III", "BNN_IV", "BNN_V", "BNN_VI"
-    ]
-    tnn_mode_labels = ["TNN_I", "TNN_II", "TNN_III", "TNN_IV", "TNN_V"]
-
-    nn_marker = {"VGG7": 'o', "LeNet": 'x'}
-    nn_label = {"VGG7": 'VGG-7', "LeNet": 'LeNet-5'}
-    nn_baseline_linestyle = {"VGG7": '--', "LeNet": ':'}
-
     if 'num_runs' in d_cat:
         max_num_runs = max(df_nn['num_runs'].unique())
         df = df[(df['num_runs'] == max_num_runs)]
@@ -751,7 +742,6 @@ def parasitics_norm_multi_plot(df: pd.DataFrame, store_path: str, s_cat: list,
     tnn_mode_labels = ["TNN_I", "TNN_II", "TNN_III", "TNN_IV", "TNN_V"]
 
     nn_marker = {"VGG7": 'o', "LeNet5": 'x'}
-    nn_label = {"VGG7": 'VGG-7', "LeNet5": 'LeNet-5'}
     nn_baseline_linestyle = {"VGG7": '--', "LeNet5": ':'}
 
     def normalize_resistance(w_res: float,
@@ -861,6 +851,113 @@ def parasitics_norm_multi_plot(df: pd.DataFrame, store_path: str, s_cat: list,
                             dpi=300)
 
 
+def parasitics_norm_small_plot(df: pd.DataFrame, store_path: str, s_cat: list,
+                               d_cat: list, plt_legend: bool = True) -> None:
+    bnn_mode_labels = [
+        "BNN_I", "BNN_II", "BNN_III", "BNN_IV", "BNN_V", "BNN_VI"
+    ]
+    tnn_mode_labels = ["TNN_I", "TNN_II", "TNN_III", "TNN_IV", "TNN_V"]
+
+    baseline_linestyle = (0, (1, 1))
+
+    def normalize_resistance(w_res: float,
+                             lrs_cur_ua: float,
+                             v_read: float) -> float:
+        lrs_current = lrs_cur_ua * 1e-6
+        lrs_cond = lrs_current / abs(v_read)
+        return w_res * lrs_cond
+
+    if 'w_res' in d_cat:
+        print("Found experiment for parasitic resistance (x-Axis).")
+        df = df[(df['w_res'] != 0.1)]
+        w_res = df['w_res'].unique()
+
+        xbar_sizes = df['xbar_size'].unique()
+
+        # Count modes in experiment
+        m_modes = list(df['m_mode'].unique())
+        bnn_modes = [bm for bm in bnn_mode_labels if bm in m_modes]
+        tnn_modes = [tm for tm in tnn_mode_labels if tm in m_modes]
+        mm_sets = {'BNN': bnn_modes, 'TNN': tnn_modes}
+        nn_names = df['nn_name'].unique()
+        assert len(nn_names) == 1
+        nn = nn_names[0]
+
+        for mm_set_name, mm_set in mm_sets.items():
+            if len(mm_set) > 0:
+                fig, axs = plt.subplots(1,
+                                        len(xbar_sizes),
+                                        figsize=(fig_width * len(xbar_sizes) /
+                                                 3 * small_width_scale,
+                                                 fig_height * small_height_scale),
+                                        layout='tight',
+                                        sharey=True)
+                axs = axs.flatten() if len(xbar_sizes) > 1 else [axs]
+                axs[0].set_ylabel("Top-1 Accuracy (\\%)",
+                                  fontsize=label_fontsize)
+                for n, xs in enumerate(xbar_sizes):
+                    print(f"Plotting for {nn} - {mm_set_name}: {xs}")
+                    axs[n].set_title(
+                        f"{nn_small_label[nn]} - {mm_set_name} - {
+                            xs[1:-1].replace(', ', times_str)}",
+                        fontsize=title_fontsize)
+                    df_xs_mms_nn = df[(df['xbar_size'] == xs) &
+                                      (df['m_mode'].str.startswith(mm_set_name)) &
+                                      (df['nn_name'] == nn)]
+                    base_top1 = df_xs_mms_nn['top1_baseline'].unique()
+                    assert len(base_top1) == 1
+                    axs[n].axhline(y=base_top1[0],
+                                   color='black',
+                                   linestyle=baseline_linestyle)
+                    for mm in mm_set:
+                        df_xs_mm = df_xs_mms_nn[(
+                            df_xs_mms_nn['m_mode'] == mm)].sort_values(
+                                by='w_res')
+                        hrs, lrs = ast.literal_eval(
+                            df_xs_mm["hrs_lrs"].iloc[0])
+                        v_read = df_xs_mm["V_read"].iloc[0]
+                        axs[n].plot([normalize_resistance(wr, lrs, v_read) for wr in df_xs_mm['w_res']],
+                                    df_xs_mm['top1'],
+                                    color=color_mode[mm])
+
+                    axs[n].set_xscale("log")
+                    axs[n].set_xlabel(r"Norm. Parasitic Resistance",
+                                      fontsize=label_fontsize)
+                    axs[n].tick_params(axis='both', labelsize=tick_fontsize)
+
+                    axs[n].set_ylim(1, 101)
+                    axs[n].grid(axis='y', linestyle=':', color=grid_color)
+
+                    axs[n].xaxis.set_minor_locator(ticker.LogLocator(
+                        base=10, subs=np.arange(2, 10), numticks=100))
+                    axs[n].grid(True, axis="x", which="major",
+                                linestyle=':', color=grid_color, alpha=1.0)
+                    axs[n].grid(True, axis="x", which="minor",
+                                linestyle=':', color=grid_color, alpha=0.3)
+
+                # Create structured legend
+                if plt_legend:
+                    # Legend for colors (Mapping modes)
+                    color_legend = [
+                        # linewidth=2,
+                        mlines.Line2D([], [],
+                                      color=c,
+                                      marker='None',
+                                      linestyle='-',
+                                      label=mm.replace('NN_', ' '))
+                        for mm, c in color_mode.items() if mm_set_name in mm
+                    ]
+                    axs[0].legend(handles=color_legend,
+                                  loc='lower left',
+                                  fontsize=legend_fontsize * 0.9,
+                                  ncol=1)
+
+                fig.savefig(f"{store_path}/parasitics_sweep_{nn}_{mm_set_name}.pdf",
+                            dpi=300)
+                fig.savefig(f"{store_path}/parasitics_sweep_{nn}_{mm_set_name}.png",
+                            dpi=300)
+
+
 def get_exp_products(config: str):
     exp_name = config.split('/')[-1].split('.json')[0]
     repo_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../'))
@@ -927,10 +1024,20 @@ if __name__ == "__main__":
                              plt_legend=(cfg['nn_names'][0] == 'LeNet5'))
 
     elif exp_name.startswith('parasitics_sweep'):
-        parasitics_norm_multi_plot(df=df,
-                                   store_path=store_path,
-                                   s_cat=cat_static,
-                                   d_cat=cat_dynamic)
+        if args.secondary_config:
+            _, _, _, df_other = get_exp_products(args.secondary_config)
+            df = pd.concat([df, df_other], ignore_index=True)
+            parasitics_norm_multi_plot(df=df,
+                                       store_path=store_path,
+                                       s_cat=cat_static,
+                                       d_cat=cat_dynamic)
+        else:
+            parasitics_norm_small_plot(df=df,
+                                       store_path=store_path,
+                                       s_cat=cat_static,
+                                       d_cat=cat_dynamic,
+                                       plt_legend=exp_name.split(
+                                           '_')[2] == "lenet5")
 
     elif exp_name.startswith('parasitics'):
         if args.secondary_config:
